@@ -1,13 +1,14 @@
 import { useContext, useDeferredValue, useEffect, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ArrowUpRight, Plus, Search, Star, Save, Archive, Sparkles, ListPlus, WandSparkles } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ChevronLeft, ChevronRight, Plus, Search, Star, Save, Archive, Sparkles, ListPlus, WandSparkles } from 'lucide-react'
 import { api, queryString } from './api'
 import type { Page, Preset } from './api'
 import { Busy, Empty, ErrorBox, IconButton, Modal, Notice } from './ui'
 import { Composer } from './Composer'
 import { AssetGrid } from './Gallery'
 import { separatorError, splitPrompts } from './promptImport'
+import { useDetailNavigation } from './useDetailNavigation'
 
 function BulkPromptForm({ close }: { close: () => void }) {
   const [text, setText] = useState('')
@@ -70,6 +71,7 @@ export function Prompts() {
 export function PromptDetail() {
   const { id } = useParams(); const cache = useQueryClient(); const notice = useContext(Notice); const navigate = useNavigate()
   const preset = useQuery({ queryKey: ['prompt', id], queryFn: () => api<Preset>(`/prompts/${id}`) })
+  const navigation = useDetailNavigation('/prompts', id, '/prompts')
   const [edit, setEdit] = useState(false); const [compose, setCompose] = useState(false); const [version, setVersion] = useState('')
   useEffect(() => { setVersion('') }, [id])
   if (preset.isPending) return <Busy />
@@ -77,5 +79,5 @@ export function PromptDetail() {
   const value = preset.data
   async function favorite() { try { await api(`/prompts/${id}`, 'PUT', { ...value, favorite: !value.favorite }); cache.invalidateQueries({ queryKey: ['prompt', id] }); cache.invalidateQueries({ queryKey: ['prompts'] }) } catch (reason) { notice((reason as Error).message) } }
   const imagePicker = <Link className="secondary" to={`/originals?pick_prompt=${encodeURIComponent(value.id)}`}><WandSparkles size={18} />Modifica immagine</Link>
-  return <><Link className="back-link" to="/prompts"><ArrowLeft size={17} />Prompts</Link><div className="page-heading"><div><span className="eyebrow">PROMPT / v{value.version}</span><h1>{value.title}</h1></div><IconButton label="Preferito" onClick={favorite}><Star fill={value.favorite ? 'currentColor' : 'none'} /></IconButton></div><div className="prompt-detail"><div className="section-toolbar"><select aria-label="Versione prompt" value={version} onChange={event => setVersion(event.target.value)}><option value="">Versione attuale</option>{value.versions?.map(item => <option key={item.version} value={item.version}>Versione {item.version}</option>)}</select><button className="secondary" onClick={() => setEdit(true)}><Save size={17} />Modifica</button></div><p className="prompt-text">{version ? value.versions?.find(item => String(item.version) === version)?.text : value.text}</p><div className="section-toolbar"><div className="result-actions"><button className="primary" onClick={() => setCompose(true)}><Sparkles size={18} />Crea immagine</button>{imagePicker}</div><IconButton label="Archivia prompt" onClick={async () => { if (!confirm('Archiviare il prompt? I risultati rimangono disponibili.')) return; try { await api(`/prompts/${id}`, 'DELETE'); cache.invalidateQueries({ queryKey: ['prompts'] }); navigate('/prompts') } catch (reason) { notice((reason as Error).message) } }}><Archive size={18} /></IconButton></div></div><h2 className="section-heading">Immagini generate</h2><AssetGrid filters={{ kind: 'edit', prompt_id: id }} />{edit && <Modal title="Modifica prompt" close={() => setEdit(false)}><PromptForm preset={value} close={() => setEdit(false)} /></Modal>}{compose && <Composer operation="create" prompt={value} close={() => setCompose(false)} />}</>
+  return <><div className="section-toolbar"><Link className="back-link" to="/prompts"><ArrowLeft size={17} />Prompts</Link><div className="detail-navigation"><IconButton label="Prompt precedente" disabled={!navigation.hasPrevious} onClick={navigation.previous}><ChevronLeft /></IconButton><IconButton label="Prompt successivo" disabled={!navigation.hasNext} onClick={navigation.next}><ChevronRight /></IconButton></div></div><div className="page-heading"><div><span className="eyebrow">PROMPT / v{value.version}</span><h1>{value.title}</h1></div><IconButton label="Preferito" onClick={favorite}><Star fill={value.favorite ? 'currentColor' : 'none'} /></IconButton></div><div className="prompt-detail" onTouchStart={navigation.onTouchStart} onTouchEnd={navigation.onTouchEnd}><div className="section-toolbar"><select aria-label="Versione prompt" value={version} onChange={event => setVersion(event.target.value)}><option value="">Versione attuale</option>{value.versions?.map(item => <option key={item.version} value={item.version}>Versione {item.version}</option>)}</select><button className="secondary" onClick={() => setEdit(true)}><Save size={17} />Modifica</button></div><p className="prompt-text">{version ? value.versions?.find(item => String(item.version) === version)?.text : value.text}</p><div className="section-toolbar"><div className="result-actions"><button className="primary" onClick={() => setCompose(true)}><Sparkles size={18} />Crea immagine</button>{imagePicker}</div><IconButton label="Archivia prompt" onClick={async () => { if (!confirm('Archiviare il prompt? I risultati rimangono disponibili.')) return; try { await api(`/prompts/${id}`, 'DELETE'); cache.invalidateQueries({ queryKey: ['prompts'] }); navigate('/prompts') } catch (reason) { notice((reason as Error).message) } }}><Archive size={18} /></IconButton></div></div><h2 className="section-heading">Immagini generate</h2><AssetGrid key={id} filters={{ kind: 'edit', prompt_id: id }} />{edit && <Modal title="Modifica prompt" close={() => setEdit(false)}><PromptForm preset={value} close={() => setEdit(false)} /></Modal>}{compose && <Composer operation="create" prompt={value} close={() => setCompose(false)} />}</>
 }

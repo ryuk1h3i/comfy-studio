@@ -5,7 +5,7 @@ import { api, token } from './api'
 import type { Asset, Job, Page, Preset, Settings } from './api'
 import { ErrorBox, Modal, Notice, UploadPanel } from './ui'
 
-export function Composer({ operation, asset, prompt, action = 'normal', close }: { operation: string; asset?: Asset; prompt?: Preset; action?: string; close: () => void }) {
+export function Composer({ operation, asset, prompt, inputIds, onQueued, action = 'normal', close }: { operation: string; asset?: Asset; prompt?: Preset; inputIds?: string[]; onQueued?: (identities: string[]) => void; action?: string; close: () => void }) {
   const [instruction, setInstruction] = useState('')
   const [selected, setSelected] = useState(prompt?.id || '')
   const [input, setInput] = useState(asset)
@@ -13,6 +13,9 @@ export function Composer({ operation, asset, prompt, action = 'normal', close }:
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [requestToken] = useState(token)
+  const [batchIds] = useState(inputIds)
+  const submitted = useRef(new Set<string>())
+  const [queuedCount, setQueuedCount] = useState(0)
   const presets = useQuery({ queryKey: ['prompts', 'composer'], queryFn: () => api<Page<Preset>>('/prompts?limit=100') })
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('/settings') })
   const choices = presets.data?.items || []
@@ -28,15 +31,22 @@ export function Composer({ operation, asset, prompt, action = 'normal', close }:
   const notice = useContext(Notice)
   const title = action === 'repeat' ? 'Rigenera' : action === 'vary' ? 'Variazione' : operation === 'upscale' ? 'Upscale' : operation === 'edit' ? 'Modifica immagine' : 'Crea immagine'
   async function submit() {
+    if (busy) return
     setBusy(true); setError('')
     try {
-      await api<Job>('/jobs', 'POST', { token: requestToken, operation, input_id: input?.id || null, prompt_id: selected || null, instruction, action, settings: factor === undefined ? {} : { upscale_factor: factor } })
-      await cache.invalidateQueries({ queryKey: ['jobs'] }); notice('Lavoro aggiunto alla coda'); close()
-    } catch (reason) { setError((reason as Error).message) } finally { setBusy(false) }
+      const inputs = batchIds || [input?.id || null]
+      for (const identity of inputs) {
+        if (identity && submitted.current.has(identity)) continue
+        await api<Job>('/jobs', 'POST', { token: batchIds ? `${requestToken}:${identity}` : requestToken, operation, input_id: identity, prompt_id: selected || null, instruction, action, settings: factor === undefined ? {} : { upscale_factor: factor } })
+        if (identity) { submitted.current.add(identity); setQueuedCount(submitted.current.size); onQueued?.([identity]) }
+      }
+      notice(batchIds ? `${batchIds.length} lavori aggiunti alla coda` : 'Lavoro aggiunto alla coda'); close()
+    } catch (reason) { setError(`${batchIds ? `${submitted.current.size} di ${batchIds.length} accodate. ` : ''}${(reason as Error).message}`) } finally { await cache.invalidateQueries({ queryKey: ['jobs'] }); setBusy(false) }
   }
   return <Modal title={title} close={close}><form className="composer" onSubmit={event => { event.preventDefault(); submit() }}>
+    {batchIds && <strong>{batchIds.length} immagini selezionate{queuedCount > 0 ? `, ${queuedCount} accodate` : ''}</strong>}
     {input && <div className="input-summary"><img src={input.thumb} alt={input.name} /><div><strong>{input.name}</strong><small>{input.width} x {input.height}</small></div></div>}
-    {operation !== 'create' && !input && <UploadPanel compact onUploaded={setInput} />}
+    {operation !== 'create' && !input && !batchIds && <UploadPanel compact onUploaded={setInput} />}
     {action === 'normal' && operation !== 'upscale' && <label>Prompt salvato<select value={selected} onChange={event => setSelected(event.target.value)}><option value="">Nessuno</option>{available.map(preset => <option key={preset.id} value={preset.id}>{preset.title}</option>)}</select></label>}
     {selected && action === 'normal' && <div className="prompt-preview">{available.find(preset => preset.id === selected)?.text}</div>}
     {operation !== 'upscale' && action !== 'repeat' && <label>{action === 'vary' ? 'Nuova istruzione' : selected ? 'Istruzione aggiuntiva' : 'Prompt'}<textarea rows={6} value={instruction} onChange={event => setInstruction(event.target.value)} required={!selected} maxLength={12000} autoFocus /></label>}
