@@ -288,6 +288,7 @@ def patch_asset(identity: str, payload: dict):
                 setattr(asset, key, bool(payload[key]))
         if payload.get("reanalyze"):
             asset.analysis, asset.analysis_attempts, asset.analysis_after = "pending", 0, 0
+            asset.analysis_error = ""
         return asset_data(database, asset)
 
 

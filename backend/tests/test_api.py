@@ -23,6 +23,31 @@ def test_bulk_prompts_are_validated_and_versioned():
         assert client.post("/api/prompts/bulk", json={"items": [{"title": "Uno", "text": "Test"}]}).status_code == 403
 
 
+def test_reanalyze_resets_previous_failure():
+    from app.db import Asset, session
+
+    with TestClient(app) as client:
+        login = client.post("/api/login", json={"password": ADMIN_PASSWORD})
+        client.headers["x-csrf-token"] = login.json()["csrf"]
+        image = io.BytesIO()
+        Image.new("RGB", (32, 24), "green").save(image, "PNG")
+        asset = client.post("/api/assets", files={"file": ("analysis.png", image.getvalue(), "image/png")}).json()
+        with session() as database:
+            row = database.get(Asset, asset["id"])
+            row.analysis = "failed"
+            row.analysis_attempts = 5
+            row.analysis_after = 9999999999
+            row.analysis_error = "Previous ML error"
+        response = client.patch(f"/api/assets/{asset['id']}", json={"reanalyze": True})
+        assert response.status_code == 200
+        assert response.json()["analysis"] == "pending"
+        assert response.json()["analysis_error"] == ""
+        with session() as database:
+            row = database.get(Asset, asset["id"])
+            assert row.analysis_attempts == 0
+            assert row.analysis_after == 0
+
+
 def test_job_results_and_duration():
     from datetime import timedelta
     from app.db import Job, JobTiming, now, session

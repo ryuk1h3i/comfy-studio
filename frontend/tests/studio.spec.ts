@@ -26,6 +26,28 @@ test('tre tab, upload, zoom e dettaglio', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
+test('analizza accoda e aggiorna automaticamente il dettaglio', async ({ page }) => {
+  const originals = await page.request.get('/api/assets?kind=original&limit=1').then(response => response.json())
+  const original = originals.items[0]
+  let state = 'failed'
+  await page.route('**/api/assets/analysis-test', async route => {
+    if (route.request().method() === 'PATCH') {
+      expect(route.request().postDataJSON()).toEqual({ reanalyze: true })
+      state = 'pending'
+    }
+    await route.fulfill({ json: { ...original, id: 'analysis-test', analysis: state, analysis_error: state === 'failed' ? 'Errore ML precedente' : '', tags: state === 'done' ? [{ id: 'analysis-tag', name: 'Paesaggio analizzato', state: 'manual' }] : [], faces: [] } })
+  })
+  await page.goto('/assets/analysis-test')
+  await expect(page.getByText('Errore ML precedente')).toBeVisible()
+  await page.getByRole('button', { name: 'Analizza', exact: true }).click()
+  await expect(page.getByText('Analisi accodata', { exact: true })).toBeVisible()
+  await expect(page.getByText('Analisi: In attesa del worker ML', { exact: true })).toBeVisible()
+  await expect(page.getByText('Errore ML precedente')).toHaveCount(0)
+  state = 'done'
+  await expect(page.getByText('Analisi: Completata', { exact: true })).toBeVisible({ timeout: 10000 })
+  await expect(page.getByText('Paesaggio analizzato', { exact: true })).toBeVisible()
+})
+
 test('clipboard mostra anteprima prima di caricare', async ({ page }) => {
   await page.evaluate(async () => {
     const blob = await fetch('/icon-192.png').then(response => response.blob())
