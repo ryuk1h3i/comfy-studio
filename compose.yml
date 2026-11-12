@@ -1,0 +1,74 @@
+name: comfy-studio
+x-backend: &backend
+  build: ./backend
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    ENVIRONMENT: production
+    DATABASE_URL: postgresql+psycopg://studio:${POSTGRES_PASSWORD:?Configura POSTGRES_PASSWORD}@postgres/studio
+    DATA_DIR: /data
+    WORKFLOW_DIR: /workflows
+  volumes:
+    - studio-data:/data
+    - ./workflows/flux2-klein-9b-q4-create-api.json:/workflows/flux2-klein-9b-q4-create-api.json:ro
+    - ./workflows/flux2-klein-9b-q4-edit-api.json:/workflows/flux2-klein-9b-q4-edit-api.json:ro
+    - ./workflows/seedvr2-upscale-api.json:/workflows/seedvr2-upscale-api.json:ro
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: studio
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configura POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U studio -d studio]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    <<: *backend
+    command: [sh, -c, "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  generation-worker:
+    <<: *backend
+    command: [python, -m, app.worker, generation]
+    depends_on:
+      api:
+        condition: service_healthy
+  analysis-worker:
+    <<: *backend
+    command: [python, -m, app.worker, analysis]
+    depends_on:
+      api:
+        condition: service_healthy
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+volumes:
+  studio-data:
+  postgres-data:

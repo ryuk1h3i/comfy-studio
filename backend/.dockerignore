@@ -1,0 +1,10 @@
+.venv
+.env*
+*.env
+*.pem
+*.key
+.session-secret
+data
+__pycache__
+.pytest_cache
+tests

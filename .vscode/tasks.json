@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Studio API (locale)",
+			"type": "shell",
+			"command": "env DATA_DIR=../data uv run --directory backend uvicorn app.main:app --host 127.0.0.1 --port 8000",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Studio frontend (locale)",
+			"type": "shell",
+			"command": "uv tool run --from nodejs-wheel npm --prefix frontend run dev -- --port 5173",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

@@ -1,0 +1,89 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {"unet_name": "flux-2-klein-9b-Q4_K_M.gguf"},
+    "_meta": {"title": "FLUX.2 Klein 9B Distilled Q4_K_M"}
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {"clip_name": "qwen_3_8b_fp8mixed.safetensors", "type": "flux2", "device": "cpu"}
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {"vae_name": "flux2-vae.safetensors"}
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "input.png"},
+    "_meta": {"title": "Input photo - Open WebUI Image"}
+  },
+  "5": {
+    "class_type": "ImageScaleToTotalPixels",
+    "inputs": {"image": ["4", 0], "upscale_method": "lanczos", "megapixels": 0.6, "resolution_steps": 16}
+  },
+  "6": {
+    "class_type": "GetImageSize",
+    "inputs": {"image": ["5", 0]}
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "Change the shirt color to red. Keep the face, background, composition and lighting unchanged."
+    },
+    "_meta": {"title": "Edit instruction - Open WebUI Prompt"}
+  },
+  "8": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {"conditioning": ["7", 0]}
+  },
+  "9": {
+    "class_type": "VAEEncode",
+    "inputs": {"pixels": ["5", 0], "vae": ["3", 0]}
+  },
+  "10": {
+    "class_type": "ReferenceLatent",
+    "inputs": {"conditioning": ["7", 0], "latent": ["9", 0]}
+  },
+  "11": {
+    "class_type": "ReferenceLatent",
+    "inputs": {"conditioning": ["8", 0], "latent": ["9", 0]}
+  },
+  "12": {
+    "class_type": "CFGGuider",
+    "inputs": {"model": ["20", 0], "positive": ["10", 0], "negative": ["11", 0], "cfg": 1.0}
+  },
+  "13": {
+    "class_type": "RandomNoise",
+    "inputs": {"noise_seed": 42}
+  },
+  "14": {
+    "class_type": "KSamplerSelect",
+    "inputs": {"sampler_name": "euler"}
+  },
+  "15": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {"steps": 4, "width": ["6", 0], "height": ["6", 1]}
+  },
+  "16": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {"width": ["6", 0], "height": ["6", 1], "batch_size": 1}
+  },
+  "17": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {"noise": ["13", 0], "guider": ["12", 0], "sampler": ["14", 0], "sigmas": ["15", 0], "latent_image": ["16", 0]}
+  },
+  "18": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["17", 0], "vae": ["3", 0]}
+  },
+  "19": {
+    "class_type": "SaveImage",
+    "inputs": {"images": ["18", 0], "filename_prefix": "OpenWebUI-Klein9B-Edit"}
+  },
+  "20": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {"model": ["1", 0], "lora_name": "REPLACE_WITH_KLEIN_9B_LORA.safetensors", "strength_model": 0.8},
+    "_meta": {"title": "Select a compatible Klein 9B LoRA before running"}
+  }
+}

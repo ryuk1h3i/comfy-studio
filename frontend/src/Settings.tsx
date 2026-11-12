@@ -1,0 +1,71 @@
+import { useContext, useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { ArrowLeft, ArrowUp, Check, ExternalLink, LogOut, Pause, Play, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react'
+import { api, token } from './api'
+import type { Job, Page, Person, Preset, Settings, Tag } from './api'
+import { Busy, Empty, ErrorBox, IconButton, Notice } from './ui'
+
+const labels: Record<string, string> = { queued: 'In attesa', submitting: 'Invio', running: 'In elaborazione', succeeded: 'Completato', failed: 'Fallito', cancelled: 'Annullato', needs_attention: 'Da verificare' }
+
+export function JobProgress({ job }: { job: Job }) {
+  if (!['running', 'submitting'].includes(job.status)) return null
+  const steps = /^Passi (\d+)\/(\d+)$/.exec(job.progress)
+  const percent = steps && Number(steps[2]) > 0 ? Math.min(100, Math.round(Number(steps[1]) / Number(steps[2]) * 100)) : undefined
+  return <div className="job-progress"><progress aria-label="Avanzamento elaborazione" max={100} value={percent} />{percent !== undefined && <span>{percent}% · {job.progress}</span>}</div>
+}
+
+function JobResults({ job }: { job: Job }) {
+  const seconds = job.duration_seconds == null ? null : Math.max(1, Math.round(job.duration_seconds))
+  const duration = seconds === null ? null : seconds < 60 ? `${seconds} s` : seconds < 3600 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${Math.floor(seconds / 3600)} h ${Math.floor(seconds % 3600 / 60)} min ${seconds % 60} s`
+  return <>{job.outputs && job.outputs.length > 0 && <div className="job-results">{job.outputs.map(output => <Link key={output.id} to={`/edits/${output.id}`} title={`Apri ${output.name}`} aria-label={`Apri risultato ${output.name}`}><img src={output.thumb} alt={output.name} loading="lazy" width={64} height={64} /></Link>)}</div>}{job.status === 'succeeded' && <div className="job-duration">{duration ? `Completato in ${duration}` : 'Durata non disponibile'}</div>}</>
+}
+
+export function Queue() {
+  const cache = useQueryClient(); const notice = useContext(Notice)
+  const jobs = useQuery({ queryKey: ['jobs'], queryFn: () => api<Job[]>('/jobs'), refetchInterval: 3000 })
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('/settings') })
+  const [busy, setBusy] = useState('')
+  async function act(job: Job, action: string) {
+    setBusy(job.id)
+    try {
+      if (action === 'recover') await api(`/jobs/${job.id}/recover`, 'POST')
+      else if (action === 'retry') await api(`/jobs/${job.id}/retry`, 'POST', { token: token() })
+      else await api(`/jobs/${job.id}`, 'PATCH', { action, priority: job.priority + 1, confirmed: action === 'resolve' })
+      cache.invalidateQueries({ queryKey: ['jobs'] })
+    } catch (reason) { notice((reason as Error).message) } finally { setBusy('') }
+  }
+  return <><Link className="back-link" to="/originals"><ArrowLeft size={17} />Archivio</Link><div className="page-heading"><div><span className="eyebrow">ELABORAZIONE</span><h1>Coda</h1></div><button className="secondary" onClick={async () => { try { await api('/settings', 'PUT', { queue_paused: !settings.data?.queue_paused }); cache.invalidateQueries({ queryKey: ['settings'] }) } catch (reason) { notice((reason as Error).message) } }}>{settings.data?.queue_paused ? <Play size={18} /> : <Pause size={18} />}{settings.data?.queue_paused ? 'Riprendi' : 'Pausa'}</button></div><ErrorBox error={jobs.error} />
+    {jobs.isPending ? <Busy /> : !jobs.data?.length ? <Empty title="La coda è vuota" /> : <div className="job-list">{jobs.data.map(job => <article className="job-row" key={job.id}><div className={`status-mark ${job.status}`} /><div className="job-content"><div className="section-toolbar"><strong>{job.operation === 'create' ? 'Creazione immagine' : job.operation === 'edit' ? 'Modifica immagine' : 'Upscale'}</strong><span className={`status-label ${job.status}`}>{labels[job.status] || job.status}</span></div><p>{job.instruction || `Upscale ${job.settings.upscale_factor}x`}</p><JobProgress job={job} /><small>{job.progress} · Seed {job.settings.seed}</small><JobResults job={job} />{job.error && <ErrorBox error={job.error} />}<div className="job-actions">{job.status === 'queued' && <><IconButton label="Aumenta priorità" disabled={busy === job.id} onClick={() => act(job, 'priority')}><ArrowUp size={18} /></IconButton><IconButton label="Annulla lavoro" disabled={busy === job.id} onClick={() => act(job, 'cancel')}><X size={18} /></IconButton></>}{job.status === 'failed' && <button className="secondary" disabled={busy === job.id} onClick={() => act(job, 'retry')}><RotateCcw size={16} />Riprova</button>}{job.status === 'needs_attention' && <>{job.comfy_id && <button className="secondary" disabled={busy === job.id} onClick={() => act(job, 'recover')}><RotateCcw size={16} />Recupera risultato</button>}<button className="secondary" disabled={busy === job.id} onClick={() => { if (confirm('Hai verificato in ComfyUI che il lavoro non sia più attivo?')) act(job, 'resolve') }}><Check size={16} />Conferma verifica ComfyUI</button></>}</div></div></article>)}</div>}
+  </>
+}
+
+export function SettingsPage() {
+  const query = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('/settings') })
+  const presets = useQuery({ queryKey: ['prompts', 'settings'], queryFn: () => api<Page<Preset>>('/prompts?limit=100') })
+  const loras = useQuery({ queryKey: ['loras'], queryFn: () => api<string[]>('/loras'), retry: false })
+  const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<Tag[]>('/tags') })
+  const people = useQuery({ queryKey: ['people'], queryFn: () => api<Person[]>('/people') })
+  const [value, setValue] = useState<Settings | null>(null)
+  const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<Record<string, { ok: boolean; error?: string }> | null>(null)
+  const [tagName, setTagName] = useState(''); const [tagDescription, setTagDescription] = useState(''); const [threshold, setThreshold] = useState(0.25)
+  const cache = useQueryClient(); const notice = useContext(Notice)
+  useEffect(() => { if (query.data) setValue(structuredClone(query.data)) }, [query.data])
+  if (query.isPending) return <Busy />
+  if (!value) return <ErrorBox error={query.error} />
+  async function command(path: string, method: string, data?: unknown) {
+    try { await api(path, method, data); cache.invalidateQueries(); notice('Salvato') } catch (reason) { notice((reason as Error).message) }
+  }
+  return <><Link className="back-link" to="/originals"><ArrowLeft size={17} />Archivio</Link><div className="page-heading"><div><span className="eyebrow">IL TUO STUDIO</span><h1>Impostazioni</h1></div><IconButton label="Esci" onClick={async () => { await api('/logout', 'POST'); cache.clear(); window.location.reload() }}><LogOut size={20} /></IconButton></div>
+    <form className="settings-form" onSubmit={async event => { event.preventDefault(); setBusy(true); setError(''); try { await api('/settings', 'PUT', value); cache.invalidateQueries({ queryKey: ['settings'] }); notice('Impostazioni salvate') } catch (reason) { setError((reason as Error).message) } finally { setBusy(false) } }}>
+      <section className="settings-section"><h2>Generazione e modifica</h2><div className="settings-fields"><label>Risoluzione edit · MP<input type="number" min="0.1" max="4" step="0.1" required value={value.edit_resolution} onChange={event => setValue({ ...value, edit_resolution: Number(event.target.value) })} /></label><label>Fattore upscale<input type="number" min="1" max="4" step="0.1" required value={value.upscale_factor} onChange={event => setValue({ ...value, upscale_factor: Number(event.target.value) })} /></label><label>Larghezza generation<input type="number" min="256" max="2048" step="16" required value={value.generation_resolution[0]} onChange={event => setValue({ ...value, generation_resolution: [Number(event.target.value), value.generation_resolution[1]] })} /></label><label>Altezza generation<input type="number" min="256" max="2048" step="16" required value={value.generation_resolution[1]} onChange={event => setValue({ ...value, generation_resolution: [value.generation_resolution[0], Number(event.target.value)] })} /></label></div></section>
+      <section className="settings-section"><div className="section-toolbar"><h2>LoRA e pesi</h2><IconButton label="Aggiungi LoRA" disabled={value.loras.length >= 10} onClick={() => setValue({ ...value, loras: [...value.loras, { name: '', weight: 0.8 }] })}><Plus size={20} /></IconButton></div><datalist id="lora-files">{loras.data?.map(name => <option key={name} value={name} />)}</datalist>{value.loras.map((item, index) => <div className="lora-row" key={index}><input aria-label={`Nome LoRA ${index + 1}`} list="lora-files" value={item.name} required maxLength={180} onChange={event => setValue({ ...value, loras: value.loras.map((current, position) => position === index ? { ...current, name: event.target.value } : current) })} /><input aria-label={`Peso LoRA ${index + 1}`} type="number" min="-4" max="4" step="0.05" required value={item.weight} onChange={event => setValue({ ...value, loras: value.loras.map((current, position) => position === index ? { ...current, weight: Number(event.target.value) } : current) })} /><IconButton label="Sposta LoRA su" disabled={index === 0} onClick={() => { const next = [...value.loras]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; setValue({ ...value, loras: next }) }}><ArrowUp size={16} /></IconButton><IconButton label="Rimuovi LoRA" onClick={() => setValue({ ...value, loras: value.loras.filter((_, position) => position !== index) })}><Trash2 size={16} /></IconButton></div>)}</section>
+      <section className="settings-section"><h2>Prompt rapidi</h2><label>Slot attivo<select value={value.active_slot} onChange={event => setValue({ ...value, active_slot: event.target.value })}><option value="0">Vuoto</option>{[1, 2, 3, 4, 5].map(number => <option key={number} value={number}>Slot {number}</option>)}</select></label><div className="quick-slots">{[1, 2, 3, 4, 5].map(number => <label key={number}>Slot {number}<select value={value.quick_slots[number] || ''} onChange={event => setValue({ ...value, quick_slots: { ...value.quick_slots, [number]: event.target.value } })}><option value="">Vuoto</option>{presets.data?.items.map(preset => <option key={preset.id} value={preset.id}>{preset.title}</option>)}</select></label>)}</div></section>
+      <ErrorBox error={error} /><button className="primary" disabled={busy}><Save size={18} />Salva impostazioni</button>
+    </form>
+    <section className="settings-section"><h2>Vocabolario tag</h2><form className="form-stack" onSubmit={async event => { event.preventDefault(); await command('/tags', 'POST', { name: tagName, description: tagDescription || tagName, threshold }); setTagName(''); setTagDescription('') }}><div className="settings-fields"><label>Nome<input required maxLength={80} value={tagName} onChange={event => setTagName(event.target.value)} /></label><label>Descrizione visiva<input value={tagDescription} maxLength={300} onChange={event => setTagDescription(event.target.value)} /></label><label>Soglia similarità<input required type="number" min="-1" max="1" step="0.01" value={threshold} onChange={event => setThreshold(Number(event.target.value))} /></label></div><button className="secondary"><Plus size={17} />Salva tag</button></form><div className="vocabulary">{tags.data?.map(tag => <div key={tag.id}><div><strong>{tag.name}</strong><small>{tag.description} · {tag.threshold}</small></div><label className="check-label"><input type="checkbox" checked={tag.automatic} onChange={event => { if (event.target.checked && !confirm('Hai calibrato la soglia? La similarità non è una probabilità.')) return; command('/tags', 'POST', { ...tag, automatic: event.target.checked }) }} />Automatico</label><IconButton label="Modifica tag" onClick={() => { setTagName(tag.name); setTagDescription(tag.description); setThreshold(tag.threshold) }}><Save size={17} /></IconButton></div>)}</div></section>
+    <section className="settings-section"><h2>Persone</h2><div className="people-list">{people.data?.map(person => <div className="person-row" key={person.id}><img src={`/api/assets/${person.asset_id}/file/thumb`} alt={person.name} /><div><strong>{person.name}</strong><small>{person.count} immagini</small></div><IconButton label={`Rinomina ${person.name}`} onClick={() => { const name = prompt('Nome', person.name); if (name) command(`/people/${person.id}`, 'PATCH', { name }) }}><Save size={17} /></IconButton><select aria-label={`Unisci ${person.name}`} value="" onChange={event => { if (event.target.value && confirm('Unire queste persone?')) command(`/people/${person.id}`, 'PATCH', { merge_into: event.target.value }) }}><option value="">Unisci a...</option>{people.data.filter(other => other.id !== person.id).map(other => <option key={other.id} value={other.id}>{other.name}</option>)}</select></div>)}</div></section>
+    <section className="settings-section"><h2>Connessioni</h2><div className="result-actions"><button className="secondary" onClick={async () => { try { setDiagnostics(await api('/diagnostics')) } catch (reason) { notice((reason as Error).message) } }}><RotateCcw size={17} />Verifica endpoint</button><button className="secondary" onClick={async () => { try { const result = await api<{ dimensions: number }>('/diagnostics/ml', 'POST'); notice(`Inferenza ML riuscita: ${result.dimensions} dimensioni`) } catch (reason) { notice((reason as Error).message) } }}><Play size={17} />Prova inferenza ML</button></div>{diagnostics && <div className="diagnostics">{Object.entries(diagnostics).map(([name, result]) => <div key={name}><span>{name}</span><span className={result.ok ? 'success-text' : 'error-text'}>{result.ok ? 'Connesso' : result.error}</span></div>)}</div>}</section>
+  </>
+}
