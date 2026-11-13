@@ -103,6 +103,16 @@ dialog:has(.app-menu) { max-width: 380px; }
 .image-picker-banner > div:first-child { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .image-picker-banner strong { font-size: 13px; }
 .image-picker-banner small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-fields { display: grid; gap: 18px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.prompt-picker { border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; margin: 0; min-width: 0; }
+.prompt-picker legend { padding: 0 6px; font-size: 12px; font-weight: 600; }
+.prompt-picker-list { display: grid; max-height: 220px; overflow-y: auto; }
+.prompt-picker-list .check-label { min-height: 44px; flex-direction: row; align-items: center; }
+.prompt-picker-list input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+.prompt-picker-list span { min-width: 0; overflow-wrap: anywhere; }
+.image-source-tabs { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 5px; }
+.image-source-tabs a { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 10px; border-radius: 3px; font-size: 12px; }
+.image-source-tabs a[aria-selected='true'] { background: var(--light); color: var(--accent); }
 .job-results { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .job-results a { width: 64px; height: 64px; border-radius: 4px; overflow: hidden; background: var(--tile); }
 .job-results img { width: 100%; height: 100%; object-fit: cover; }
