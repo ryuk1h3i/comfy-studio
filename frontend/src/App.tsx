@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { Aperture, Images, Layers, ListOrdered, Settings2, TextCursorInput, LogIn, Menu, Sun, Moon, Monitor, LoaderCircle, CircleCheck, CircleAlert } from 'lucide-react'
+import { Aperture, Images, Layers, ListOrdered, Settings2, TextCursorInput, LogIn, Menu, Sun, Moon, Monitor, LoaderCircle, CircleCheck, CircleAlert, ScanFace } from 'lucide-react'
 import { api, setCsrf } from './api'
 import type { Job } from './api'
 import { Busy, ErrorBox, IconButton, Modal, Notice } from './ui'
 import { AssetDetail, Gallery } from './Gallery'
 import { PromptDetail, Prompts } from './Prompts'
 import { Queue, SettingsPage } from './Settings'
+import { Explore } from './Explore'
 
 function Login({ done }: { done: () => void }) {
   const [password, setPassword] = useState('')
@@ -56,8 +57,8 @@ export default function App() {
   if (session.isPending) return <Busy />
   if (!session.data) return <Login done={() => cache.invalidateQueries({ queryKey: ['session'] })} />
   return <Notice.Provider value={setNotice}><header className="app-header"><Link className="brand" to="/originals"><Aperture size={27} /><span>Comfy <strong>Studio</strong></span></Link><div className="header-tools"><span className={`global-job-status ${attention ? 'attention' : ''}`} role="status" aria-label={statusLabel} title={statusLabel}>{processing ? <LoaderCircle className="spin" size={15} /> : attention ? <CircleAlert size={15} /> : active ? <ListOrdered size={15} /> : <CircleCheck size={15} />}</span><Link className="icon-button queue-link" aria-label={`Coda, ${active} lavori`} title="Coda" to="/queue"><ListOrdered size={21} />{active > 0 && <span className="count">{active}</span>}</Link><IconButton label="Apri menu" aria-haspopup="dialog" aria-expanded={menu} onClick={() => setMenu(true)}><Menu size={21} /></IconButton></div></header>
-    <nav className="tabs" aria-label="Navigazione principale"><NavLink to="/prompts"><TextCursorInput size={20} />Prompts</NavLink><NavLink to="/originals"><Images size={20} />Originali</NavLink><NavLink to="/edits"><Layers size={20} />Edits</NavLink></nav>
-    <main className={location.pathname.startsWith('/assets/') || location.pathname.startsWith('/edits/') ? 'asset-main' : 'workspace'}><Routes><Route path="/" element={<Navigate to="/originals" replace />} /><Route path="/prompts" element={<Prompts />} /><Route path="/prompts/:id" element={<PromptDetail />} /><Route path="/originals" element={<Gallery kind="original" />} /><Route path="/edits" element={<Gallery kind="edit" />} /><Route path="/edits/:id" element={<AssetDetail />} /><Route path="/assets/:id" element={<AssetDetail />} /><Route path="/queue" element={<Queue />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<Navigate to="/originals" replace />} /></Routes></main>
+    <nav className="tabs" aria-label="Navigazione principale"><NavLink to="/prompts"><TextCursorInput size={20} />Prompts</NavLink><NavLink to="/originals"><Images size={20} />Originali</NavLink><NavLink to="/edits"><Layers size={20} />Edits</NavLink><NavLink to="/explore"><ScanFace size={20} />Volti e tag</NavLink></nav>
+    <main className={location.pathname.startsWith('/assets/') || location.pathname.startsWith('/edits/') ? 'asset-main' : 'workspace'}><Routes><Route path="/" element={<Navigate to="/originals" replace />} /><Route path="/prompts" element={<Prompts />} /><Route path="/prompts/:id" element={<PromptDetail />} /><Route path="/originals" element={<Gallery kind="original" />} /><Route path="/edits" element={<Gallery kind="edit" />} /><Route path="/edits/:id" element={<AssetDetail />} /><Route path="/assets/:id" element={<AssetDetail />} /><Route path="/explore" element={<Explore />} /><Route path="/queue" element={<Queue />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<Navigate to="/originals" replace />} /></Routes></main>
     {menu && <Modal title="Menu" close={() => setMenu(false)}><div className="app-menu"><Link to="/queue" onClick={() => setMenu(false)}><ListOrdered size={20} /><span>Coda</span><small>{active} attivi</small></Link><Link to="/settings" onClick={() => setMenu(false)}><Settings2 size={20} /><span>Impostazioni</span></Link><fieldset className="theme-picker"><legend>Aspetto</legend><div className="theme-options">{([{ value: 'light', label: 'Chiaro', icon: Sun }, { value: 'dark', label: 'Scuro', icon: Moon }, { value: 'system', label: 'Sistema', icon: Monitor }]).map(option => <button key={option.value} type="button" aria-pressed={theme === option.value} onClick={() => setTheme(option.value)}><option.icon size={18} />{option.label}</button>)}</div></fieldset></div></Modal>}
     {notice && <div className="toast" role="status">{notice}</div>}
   </Notice.Provider>

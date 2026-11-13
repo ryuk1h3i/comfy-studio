@@ -9,7 +9,7 @@ import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import func, inspect, or_, select, text
+from sqlalchemy import func, inspect, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from . import auth
@@ -212,7 +212,7 @@ async def upload(file: UploadFile = File()):
 async def assets(kind: str = "original", q: str = "", semantic: bool = False, favorite: bool = False,
                  root_id: str | None = None, prompt_id: str | None = None, input_id: str | None = None,
                  tag_id: str | None = None, person_id: str | None = None, operation: str | None = None, job_id: str | None = None,
-                 deleted: bool = False, offset: int = Query(0, ge=0), limit: int = Query(60, ge=1, le=100)):
+                 deleted: bool = False, include_suggested: bool = False, offset: int = Query(0, ge=0), limit: int = Query(60, ge=1, le=100)):
     query_vector = None
     if semantic and q.strip():
         from .ml import predict
@@ -221,7 +221,9 @@ async def assets(kind: str = "original", q: str = "", semantic: bool = False, fa
         except (httpx.HTTPError, ValueError, KeyError) as error:
             raise HTTPException(503, f"Ricerca semantica non disponibile: {type(error).__name__}. Usa la ricerca testuale.") from None
     with session() as database:
-        statement = select(Asset).where(Asset.kind == kind, Asset.deleted == deleted)
+        statement = select(Asset).where(Asset.deleted == deleted)
+        if kind != "all":
+            statement = statement.where(Asset.kind == kind)
         if favorite:
             statement = statement.where(Asset.favorite.is_(True))
         if root_id:
@@ -239,9 +241,12 @@ async def assets(kind: str = "original", q: str = "", semantic: bool = False, fa
         if q and not semantic:
             statement = statement.where(or_(Asset.name.icontains(q, autoescape=True), Job.instruction.icontains(q, autoescape=True)))
         if tag_id:
-            statement = statement.where(Asset.id.in_(select(AssetTag.asset_id).where(AssetTag.tag_id == tag_id, AssetTag.state.in_(["accepted", "manual"]))))
+            states = ["accepted", "manual", "suggested"] if include_suggested else ["accepted", "manual"]
+            matching_tag = AssetTag.tag_id.is_not(None) if tag_id == "any" else AssetTag.tag_id == tag_id
+            statement = statement.where(Asset.id.in_(select(AssetTag.asset_id).where(matching_tag, AssetTag.state.in_(states))))
         if person_id:
-            statement = statement.where(Asset.id.in_(select(Face.asset_id).where(Face.person_id == person_id)))
+            matching_person = Face.id.is_not(None) if person_id == "any" else Face.person_id.is_(None) if person_id == "unassigned" else Face.person_id == person_id
+            statement = statement.where(Asset.id.in_(select(Face.asset_id).where(matching_person)))
         if query_vector:
             from .ml import MODEL, similarity
             statement = statement.where(Asset.model == MODEL)
@@ -254,6 +259,16 @@ async def assets(kind: str = "original", q: str = "", semantic: bool = False, fa
         else:
             page = list(database.scalars(statement.order_by(Asset.created.desc(), Asset.id).offset(offset).limit(limit + 1)))
         return {"items": [asset_data(database, asset) for asset in page[:limit]], "next": offset + limit if len(page) > limit else None}
+
+
+@app.post("/api/assets/reanalyze", dependencies=[Depends(auth.authenticated)])
+def reanalyze_assets():
+    if not IMMICH_ML_URL:
+        raise HTTPException(503, "IMMICH_ML_URL non configurato")
+    with session() as database:
+        result = database.execute(update(Asset).where(Asset.deleted.is_(False)).values(
+            analysis="pending", analysis_attempts=0, analysis_after=0, analysis_error=""))
+        return {"queued": result.rowcount}
 
 
 @app.get("/api/assets/{identity}/file/{variant}", dependencies=[Depends(auth.authenticated)])

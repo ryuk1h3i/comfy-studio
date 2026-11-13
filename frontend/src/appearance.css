@@ -72,6 +72,13 @@ dialog:has(.app-menu) { max-width: 380px; }
 .filter-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .filter-panel .check-label { min-height: 44px; }
 .filter-panel select { min-height: 44px; }
+.explore-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.explore-controls > label { min-width: 0; flex: 1 1 180px; }
+.explore-controls select { width: 100%; min-width: 0; min-height: 44px; }
+.explore-controls > .check-label { flex: 0 1 auto; min-height: 44px; }
+.explore-modes { display: flex; flex: 0 0 auto; padding: 3px; border: 1px solid var(--line); border-radius: 5px; }
+.explore-modes button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 14px; border-radius: 3px; }
+.explore-modes button[aria-pressed='true'] { background: var(--light); color: var(--accent); }
 .upload-dropdown { position: relative; }
 .upload-dropdown summary { list-style: none; cursor: pointer; min-height: 44px; width: 44px; padding: 0; }
 .upload-dropdown summary::-webkit-details-marker { display: none; }
@@ -117,7 +124,10 @@ dialog:has(.app-menu) { max-width: 380px; }
   .header-tools { gap: 2px; }
   .icon-button, .filterbar .icon-button { width: 44px; height: 44px; }
   .tabs { height: calc(52px + env(safe-area-inset-bottom)); padding: 0 6px env(safe-area-inset-bottom); }
-  .tabs a { flex: 1; padding: 4px 8px; gap: 2px; min-width: 0; }
+  .tabs a { flex: 1; padding: 4px; gap: 2px; min-width: 0; font-size: 11px; white-space: nowrap; }
+  .explore-modes { flex-basis: 100%; }
+  .explore-modes button { flex: 1; }
+  .explore-controls > label { flex-basis: calc(50% - 6px); }
   .tabs a svg { width: 18px; height: 18px; }
   .workspace { padding: 12px 12px calc(72px + env(safe-area-inset-bottom)); }
   .page-heading { margin-bottom: 14px; min-height: 32px; }
