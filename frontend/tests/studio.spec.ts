@@ -99,6 +99,18 @@ test('layout senza overflow da telefono stretto a desktop', async ({ page }) => 
     await expect.poll(() => page.locator('.gallery-row').first().evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(expectedColumns)
     const image = await page.locator('.asset-image').first().boundingBox()
     expect(image!.width).toBeLessThan(width / expectedColumns)
+    expect(Math.abs(image!.height - image!.width)).toBeLessThan(2)
+    const rows = page.locator('.gallery-row')
+    for (let index = 0; index < await rows.count(); index++) {
+      const row = rows.nth(index)
+      const bounds = await row.boundingBox()
+      const caption = await row.locator('.asset-caption').first().boundingBox()
+      expect(bounds!.y + bounds!.height - caption!.y - caption!.height).toBeGreaterThanOrEqual(15)
+      if (index + 1 < await rows.count()) {
+        const next = await rows.nth(index + 1).boundingBox()
+        expect(next!.y).toBeGreaterThanOrEqual(bounds!.y + bounds!.height - 1)
+      }
+    }
     if (width <= 700) expect(image!.y).toBeLessThan(200)
     const search = await page.getByRole('textbox', { name: 'Cerca immagini' }).boundingBox()
     expect(search!.width).toBeGreaterThan(140)

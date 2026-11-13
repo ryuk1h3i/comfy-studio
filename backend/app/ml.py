@@ -66,9 +66,7 @@ def cluster_faces(database):
         job = database.get(Job, asset.job_id) if asset.job_id else None
         if not job or job.operation != "upscale":
             eligible.append(face)
-    if len(eligible) < 3:
-        return
-    labels = DBSCAN(eps=0.4, min_samples=3, metric="cosine").fit_predict([face.embedding for face in eligible])
+    labels = DBSCAN(eps=0.4, min_samples=3, metric="cosine").fit_predict([face.embedding for face in eligible]) if len(eligible) >= 3 else []
     for label in set(labels):
         if label == -1:
             continue

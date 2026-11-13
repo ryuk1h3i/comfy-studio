@@ -23,7 +23,7 @@ export function AssetGrid({ filters, selection, selected, onItems, onOpen }: { f
   const items = query.data?.pages.flatMap(page => page.items) || []
   const rowCount = Math.ceil(items.length / columns)
   const mobile = window.innerWidth <= 700
-  const rowHeight = mobile ? (gridWidth - (columns - 1) * 6) / columns + 24 : Math.min(290, (gridWidth / columns) * 1.18) + 35
+  const rowHeight = (gridWidth - (columns - 1) * (mobile ? 6 : 14)) / columns + 40
   const virtual = useWindowVirtualizer({ count: rowCount, estimateSize: () => rowHeight, overscan: 3, scrollMargin: margin })
   useEffect(() => { virtual.measure() }, [rowHeight, columns])
   useEffect(() => {
@@ -94,6 +94,9 @@ export function AssetDetail() {
   const [analysisSubmitting, setAnalysisSubmitting] = useState(false)
   const details = useRef<HTMLDivElement>(null)
   const value = asset.data
+  useEffect(() => {
+    if (value?.analysis === 'done') cache.invalidateQueries({ queryKey: ['people'] })
+  }, [value?.id, value?.analysis, cache])
   const navigation = useDetailNavigation(`/assets?kind=${value?.kind || 'original'}`, id, value?.kind === 'edit' ? '/edits' : '/assets', !!value)
   const siblings = useQuery({ queryKey: ['assets', 'viewer', value?.kind], enabled: !!value, queryFn: () => api<Page<Asset>>(`/assets?kind=${value?.kind}&limit=100`) })
   const nearby = siblings.data?.items || []

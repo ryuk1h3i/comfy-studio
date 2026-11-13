@@ -441,7 +441,9 @@ def save_tag(payload: dict):
             row = Tag(name=name)
             database.add(row)
         row.description = str(payload.get("description") or name)[:300]
-        row.threshold, row.automatic = threshold, bool(payload.get("automatic", False))
+        row.threshold = threshold
+        if "automatic" in payload:
+            row.automatic = bool(payload["automatic"])
         row.embedding, row.model = None, ""
         for asset in database.scalars(select(Asset).where(Asset.deleted.is_(False))):
             asset.analysis, asset.analysis_after, asset.analysis_attempts = "pending", 0, 0
