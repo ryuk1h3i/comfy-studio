@@ -12,7 +12,7 @@ export function Composer({ operation, asset, prompt, inputIds, onQueued, action 
   const [factor, setFactor] = useState<number | undefined>(undefined)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [requestToken] = useState(token)
+  const requestTokens = useRef(new Map<string, string>())
   const [batchIds] = useState(inputIds)
   const submitted = useRef(new Set<string>())
   const [queuedCount, setQueuedCount] = useState(0)
@@ -44,7 +44,8 @@ export function Composer({ operation, asset, prompt, inputIds, onQueued, action 
         for (const promptId of promptIds) {
           const key = JSON.stringify([identity, promptId])
           if (submitted.current.has(key)) continue
-          await api<Job>('/jobs', 'POST', { token: `${requestToken}:${key}`, operation, input_id: identity, prompt_id: promptId, instruction, action, settings: factor === undefined ? {} : { upscale_factor: factor } })
+          if (!requestTokens.current.has(key)) requestTokens.current.set(key, token())
+          await api<Job>('/jobs', 'POST', { token: requestTokens.current.get(key)!, operation, input_id: identity, prompt_id: promptId, instruction, action, settings: factor === undefined ? {} : { upscale_factor: factor } })
           submitted.current.add(key); setQueuedCount(submitted.current.size)
         }
         if (identity) onQueued?.([identity])
