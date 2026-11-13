@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import logging
 import time
 
 import httpx
@@ -14,10 +15,21 @@ from .storage import location
 
 MODEL = f"{CLIP_MODEL}@{MODEL_REVISION}"
 FACE_VERSION = f"{FACE_MODEL}@{MODEL_REVISION}"
+logger = logging.getLogger(__name__)
 
 
 def vector(value):
-    result = np.frombuffer(base64.b64decode(value, validate=True), dtype="<f4").copy() if isinstance(value, str) else np.asarray(value, dtype=np.float32)
+    try:
+        if isinstance(value, str):
+            value = value.strip()
+            if value.startswith("["):
+                result = np.asarray(json.loads(value), dtype=np.float32)
+            else:
+                result = np.frombuffer(base64.b64decode(value, validate=True), dtype="<f4").copy()
+        else:
+            result = np.asarray(value, dtype=np.float32)
+    except (ValueError, TypeError, OverflowError) as error:
+        raise ValueError("Embedding remoto non valido: atteso array numerico, array JSON o float32 Base64") from error
     if result.ndim != 1 or not 16 <= len(result) <= 8192 or not np.isfinite(result).all() or np.linalg.norm(result) == 0:
         raise ValueError("Embedding remoto non valido")
     return (result / np.linalg.norm(result)).tolist()
@@ -41,7 +53,18 @@ async def predict(image=None, query=None, faces=False):
         data["text"] = query
     async with httpx.AsyncClient(timeout=ML_TIMEOUT) as client:
         response = await client.post(f"{IMMICH_ML_URL}/predict", data=data, files=files)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            try:
+                body = response.json()
+            except ValueError:
+                body = response.text
+            detail = body.get("detail", body) if isinstance(body, dict) else body
+            detail = str(detail).strip()[:800] or "Nessun dettaglio restituito dal server ML"
+            models = f"CLIP={CLIP_MODEL}" + (f", volti={FACE_MODEL}" if faces else "")
+            phase = "immagine e volti" if faces else "immagine" if image is not None else "testo"
+            raise ValueError(f"Immich ML HTTP {response.status_code}, analisi {phase} ({models}): {detail}. Consultare i log del servizio Immich ML per la causa del fallimento.") from error
         payload = response.json()
     return vector(payload["clip"]), payload.get("facial-recognition", []), payload
 
@@ -154,10 +177,11 @@ async def analysis_loop():
         try:
             await analyze(asset_id)
         except Exception as error:
+            logger.exception("Analisi ML fallita per immagine %s", asset_id)
             with session() as database:
                 asset = database.get(Asset, asset_id)
                 asset.analysis_attempts += 1
                 asset.analysis = "failed"
-                asset.analysis_error = f"{type(error).__name__}: {str(error)[:250]}"
+                asset.analysis_error = f"{type(error).__name__}: {str(error)[:1500]}"
                 asset.analysis_after = time.time() + min(3600, 30 * 2**asset.analysis_attempts)
             await asyncio.sleep(5)
