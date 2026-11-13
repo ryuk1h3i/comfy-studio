@@ -72,6 +72,8 @@ Da Impostazioni verificare gli endpoint e provare **Inferenza ML**: il ping non 
 
 ## Immich ML remoto
 
+All'avvio del worker di analisi, se il vocabolario tag e vuoto vengono create 18 categorie visive generiche e riaccodate tutte le immagini fuori dal cestino. I risultati sono suggerimenti basati sulla soglia di similarita, non etichette garantite per ogni immagine. I vocabolari gia configurati non vengono modificati; descrizioni, soglie e assegnazione automatica si gestiscono nelle Impostazioni. Nel tab Volti e tag, il pulsante Rinomina persona permette di cambiare il nome della persona selezionata.
+
 Adapter `pipeline`: `GET /ping`, `POST /predict` multipart con `entries` e `image` oppure `text`. Le sezioni `clip.visual/textual` e `facial-recognition.detection/recognition` usano `modelName` e `options`. Supporta embedding come array o float32 little-endian base64. Il protocollo e interno a Immich: **verificare e fissare la versione sull'host remoto**, senza presumere compatibilita con tutte le release.
 
 Per query italiane usare un modello multilingue supportato. `ML_MODEL_REVISION` identifica revisione/preprocessing: cambiarlo insieme al modello, riavviare API e worker e richiedere Analizza sulle immagini. Gli embedding vecchi non vengono mescolati ai nuovi. PostgreSQL calcola distanze con pgvector e applica filtri nel DB con paginazione. La ricerca e esatta, senza indice HNSW: per archivi molto grandi aggiungere un indice dimensionato sul modello scelto e misurarne il piano query.

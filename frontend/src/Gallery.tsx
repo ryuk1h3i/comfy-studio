@@ -22,7 +22,7 @@ export function AssetGrid({ filters, selection, selected, onItems, onOpen }: { f
     queryFn: ({ pageParam }) => api<Page<Asset>>(`/assets?${key}&offset=${pageParam}`), getNextPageParam: page => page.next ?? undefined })
   const items = query.data?.pages.flatMap(page => page.items) || []
   const rowCount = Math.ceil(items.length / columns)
-  const rowHeight = (gridWidth - (columns - 1) * 12) / columns + 36
+  const rowHeight = (gridWidth - (columns - 1) * 12) / columns + 12
   const virtual = useWindowVirtualizer({ count: rowCount, estimateSize: () => rowHeight, overscan: 3, scrollMargin: margin })
   useEffect(() => { virtual.measure() }, [rowHeight, columns])
   useEffect(() => {
@@ -47,7 +47,7 @@ export function AssetGrid({ filters, selection, selected, onItems, onOpen }: { f
   if (query.isPending) return <Busy />
   if (!items.length) return <Empty title="Nessuna immagine" />
   return <div ref={element} className="gallery-grid" style={{ height: virtual.getTotalSize() }}><div className="grid-window">{rows.map(row => <div key={row.key} className="gallery-row" style={{ position: 'absolute', top: 0, width: '100%', transform: `translateY(${row.start - margin}px)`, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, height: rowHeight }}>{items.slice(row.index * columns, (row.index + 1) * columns).map(asset => <div className="asset-tile" key={asset.id}>
-    <Link to={`/assets/${asset.id}`} className={`asset-image ${selected?.has(asset.id) ? 'selected' : ''}`} onClick={event => { if (onOpen || selection) { event.preventDefault(); (onOpen || selection)?.(asset) } }}><img src={asset.thumb} alt={asset.name} loading="lazy" width={asset.width} height={asset.height} /><span className="asset-badges">{asset.operation && <span>{asset.operation}</span>}{asset.favorite && <Star size={15} fill="currentColor" />}</span></Link>{selection && <button type="button" className="select-mark" role="checkbox" aria-checked={selected?.has(asset.id) || false} aria-label={`Seleziona ${asset.name}`} title={`Seleziona ${asset.name}`} onClick={() => selection(asset)}>{selected?.has(asset.id) ? <Check size={18} /> : null}</button>}<div className="asset-caption"><span>{asset.name}</span><small>{asset.width} x {asset.height}</small></div>
+    <Link to={`/assets/${asset.id}`} className={`asset-image ${selected?.has(asset.id) ? 'selected' : ''}`} onClick={event => { if (onOpen || selection) { event.preventDefault(); (onOpen || selection)?.(asset) } }}><img src={asset.thumb} alt={asset.name} loading="lazy" width={asset.width} height={asset.height} /><span className="asset-badges">{asset.operation && <span>{asset.operation}</span>}{asset.favorite && <Star size={15} fill="currentColor" />}</span></Link>{selection && <button type="button" className="select-mark" role="checkbox" aria-checked={selected?.has(asset.id) || false} aria-label={`Seleziona ${asset.name}`} title={`Seleziona ${asset.name}`} onClick={() => selection(asset)}>{selected?.has(asset.id) ? <Check size={18} /> : null}</button>}
   </div>)}</div>)}</div>{query.isFetchingNextPage && <span className="grid-loading">Caricamento...</span>}</div>
 }
 

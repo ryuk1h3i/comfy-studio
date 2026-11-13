@@ -7,7 +7,7 @@ import time
 import httpx
 import numpy as np
 from sklearn.cluster import DBSCAN
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from .config import CLIP_MODEL, FACE_MODEL, IMMICH_ML_URL, ML_PROTOCOL, ML_TIMEOUT, MODEL_REVISION
 from .db import Asset, AssetTag, Face, Job, Person, Tag, engine, session
@@ -16,6 +16,37 @@ from .storage import location
 MODEL = f"{CLIP_MODEL}@{MODEL_REVISION}"
 FACE_VERSION = f"{FACE_MODEL}@{MODEL_REVISION}"
 logger = logging.getLogger(__name__)
+DEFAULT_TAGS = (
+    ("Ritratto", "A portrait of a person, face and shoulders"),
+    ("Persone", "A photo of people"),
+    ("Paesaggio", "A landscape with natural scenery"),
+    ("Montagna", "A landscape with mountains"),
+    ("Mare", "A photo of the sea, ocean or beach"),
+    ("Bosco", "A forest with trees"),
+    ("Fiori", "A photo of flowers"),
+    ("Animali", "A photo of animals"),
+    ("Cani", "A photo of a dog"),
+    ("Gatti", "A photo of a cat"),
+    ("Architettura", "A photo of buildings and architecture"),
+    ("Citta", "A city street with buildings"),
+    ("Interni", "An interior room with furniture"),
+    ("Cibo", "A photo of food or a meal"),
+    ("Veicoli", "A photo of a car, motorcycle or other vehicle"),
+    ("Illustrazione", "A drawing or digital illustration"),
+    ("Pittura", "A painting or painted artwork"),
+    ("Bianco e nero", "A black and white photograph"),
+)
+
+
+def initialize_tag_vocabulary():
+    with session() as database:
+        if database.scalar(select(Tag.id).limit(1)) is not None:
+            return
+        for name, description in DEFAULT_TAGS:
+            database.add(Tag(name=name, description=description, threshold=0.25, automatic=False))
+        database.execute(update(Asset).where(Asset.deleted.is_(False)).values(
+            analysis="pending", analysis_attempts=0, analysis_after=0, analysis_error=""))
+    logger.info("Creato vocabolario iniziale di %s tag e riaccodate le immagini", len(DEFAULT_TAGS))
 
 
 def vector(value):
@@ -163,6 +194,7 @@ async def analyze(asset_id):
 
 
 async def analysis_loop():
+    initialize_tag_vocabulary()
     while True:
         if not IMMICH_ML_URL:
             await asyncio.sleep(10)

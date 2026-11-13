@@ -1,20 +1,38 @@
-import { useQuery } from '@tanstack/react-query'
+import { useContext, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { ScanFace, Tags } from 'lucide-react'
+import { Pencil, ScanFace, Tags } from 'lucide-react'
 import { api, queryString } from './api'
 import type { Person, Tag } from './api'
 import { AssetGrid } from './Gallery'
-import { ErrorBox } from './ui'
+import { ErrorBox, IconButton, Notice } from './ui'
 
 export function Explore() {
   const [params, setParams] = useSearchParams()
+  const cache = useQueryClient()
+  const notice = useContext(Notice)
+  const [renaming, setRenaming] = useState(false)
   const people = useQuery({ queryKey: ['people'], queryFn: () => api<Person[]>('/people'), refetchInterval: 10000 })
-  const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<Tag[]>('/tags') })
+  const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<Tag[]>('/tags'), refetchInterval: 10000 })
   const mode = params.get('mode') === 'tags' ? 'tags' : 'faces'
   const kind = params.get('kind') || 'all'
   const person = params.get('person') || 'any'
   const tag = params.get('tag') || 'any'
   const suggested = params.get('suggested') !== 'false'
+  const selectedPerson = people.data?.find(item => item.id === person)
+  async function renamePerson() {
+    if (!selectedPerson) return
+    const name = prompt('Nome della persona', selectedPerson.name)?.trim()
+    if (!name || name === selectedPerson.name) return
+    if (name.length > 100) { notice('Il nome deve contenere al massimo 100 caratteri'); return }
+    setRenaming(true)
+    try {
+      await api(`/people/${selectedPerson.id}`, 'PATCH', { name })
+      await cache.invalidateQueries({ queryKey: ['people'] })
+      notice('Persona rinominata')
+    } catch (reason) { notice((reason as Error).message) }
+    finally { setRenaming(false) }
+  }
   function filter(key: string, value: string) {
     const next = new URLSearchParams(params)
     next.set(key, value)
@@ -40,6 +58,7 @@ export function Explore() {
         <option value="any">Tutti i tag</option>
         {tags.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>}
+      {mode === 'faces' && selectedPerson && <IconButton label="Rinomina persona" disabled={renaming} onClick={renamePerson}><Pencil size={18} /></IconButton>}
       <label>Immagini<select value={kind} onChange={event => filter('kind', event.target.value)}><option value="all">Tutte</option><option value="original">Originali</option><option value="edit">Elaborazioni</option></select></label>
       {mode === 'tags' && <label className="check-label"><input type="checkbox" checked={suggested} onChange={event => filter('suggested', String(event.target.checked))} />Includi suggeriti</label>}
     </div>
