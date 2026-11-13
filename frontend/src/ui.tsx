@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { X, LoaderCircle, AlertCircle, ImagePlus, ClipboardPaste, Upload, Camera } from 'lucide-react'
 import { api } from './api'
-import type { Asset } from './api'
+import type { Asset, Person } from './api'
 import { useQueryClient } from '@tanstack/react-query'
 
 export const Notice = createContext<(text: string) => void>(() => {})
@@ -22,6 +22,20 @@ export function Modal({ title, close, children }: { title: string; close: () => 
   return <dialog ref={dialog} onCancel={event => { event.preventDefault(); close() }} onClick={event => { if (event.target === dialog.current) close() }}><div className="modal-header"><h2>{title}</h2><IconButton label="Chiudi" onClick={close}><X /></IconButton></div>{children}</dialog>
 }
 export function Empty({ title, children }: { title: string; children?: ReactNode }) { return <div className="empty"><ImagePlus size={36} strokeWidth={1.3} /><h2>{title}</h2>{children}</div> }
+
+export function PersonNameDialog({ initialName, people, save, close }: { initialName: string; people: Person[]; save: (name: string) => Promise<void>; close: () => void }) {
+  const [name, setName] = useState(initialName)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  return <Modal title="Nome della persona" close={close}><form className="form-stack" onSubmit={async event => {
+    event.preventDefault()
+    if (!name.trim()) return
+    setBusy(true); setError('')
+    try { await save(name.trim()); close() }
+    catch (reason) { setError((reason as Error).message) }
+    finally { setBusy(false) }
+  }}><label>Nome<input autoFocus required maxLength={100} list="person-name-options" value={name} onChange={event => setName(event.target.value)} /></label><datalist id="person-name-options">{Array.from(new Set(people.map(person => person.name))).sort((first, second) => first.localeCompare(second, 'it', { sensitivity: 'base' })).map(value => <option key={value} value={value} />)}</datalist><ErrorBox error={error} /><button className="primary" disabled={busy || !name.trim()}>{busy ? 'Salvataggio...' : 'Salva'}</button></form></Modal>
+}
 
 interface PendingFile { file: File; url: string; error?: string; done?: boolean }
 export function UploadPanel({ onUploaded, compact = false }: { onUploaded?: (asset: Asset) => void; compact?: boolean }) {

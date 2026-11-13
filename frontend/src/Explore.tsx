@@ -5,13 +5,14 @@ import { Pencil, ScanFace, Tags } from 'lucide-react'
 import { api, queryString } from './api'
 import type { Person, Tag } from './api'
 import { AssetGrid } from './Gallery'
-import { ErrorBox, IconButton, Notice } from './ui'
+import { ErrorBox, IconButton, Notice, PersonNameDialog } from './ui'
 
 export function Explore() {
   const [params, setParams] = useSearchParams()
   const cache = useQueryClient()
   const notice = useContext(Notice)
   const [renaming, setRenaming] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<Person | null>(null)
   const people = useQuery({ queryKey: ['people'], queryFn: () => api<Person[]>('/people'), refetchInterval: 10000 })
   const tags = useQuery({ queryKey: ['tags'], queryFn: () => api<Tag[]>('/tags'), refetchInterval: 10000 })
   const mode = params.get('mode') === 'tags' ? 'tags' : 'faces'
@@ -20,17 +21,16 @@ export function Explore() {
   const tag = params.get('tag') || 'any'
   const suggested = params.get('suggested') !== 'false'
   const selectedPerson = people.data?.find(item => item.id === person)
-  async function renamePerson() {
-    if (!selectedPerson) return
-    const name = prompt('Nome della persona', selectedPerson.name)?.trim()
-    if (!name || name === selectedPerson.name) return
-    if (name.length > 100) { notice('Il nome deve contenere al massimo 100 caratteri'); return }
+  async function renamePerson(name: string) {
+    if (!renameTarget) return
     setRenaming(true)
     try {
-      await api(`/people/${selectedPerson.id}`, 'PATCH', { name })
+      const result = await api<{ id: string }>(`/people/${renameTarget.id}`, 'PATCH', { name })
+      filter('person', result.id)
       await cache.invalidateQueries({ queryKey: ['people'] })
+      await cache.invalidateQueries({ queryKey: ['assets'] })
       notice('Persona rinominata')
-    } catch (reason) { notice((reason as Error).message) }
+    }
     finally { setRenaming(false) }
   }
   function filter(key: string, value: string) {
@@ -58,11 +58,12 @@ export function Explore() {
         <option value="any">Tutti i tag</option>
         {tags.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>}
-      {mode === 'faces' && selectedPerson && <IconButton label="Rinomina persona" disabled={renaming} onClick={renamePerson}><Pencil size={18} /></IconButton>}
+      {mode === 'faces' && selectedPerson && <IconButton label="Rinomina persona" disabled={renaming} onClick={() => setRenameTarget(selectedPerson)}><Pencil size={18} /></IconButton>}
       <label>Immagini<select value={kind} onChange={event => filter('kind', event.target.value)}><option value="all">Tutte</option><option value="original">Originali</option><option value="edit">Elaborazioni</option></select></label>
       {mode === 'tags' && <label className="check-label"><input type="checkbox" checked={suggested} onChange={event => filter('suggested', String(event.target.checked))} />Includi suggeriti</label>}
     </div>
     <ErrorBox error={mode === 'faces' ? people.error : tags.error} />
     <AssetGrid key={queryString(filters)} filters={filters} />
+    {renameTarget && <PersonNameDialog initialName={renameTarget.name} people={people.data || []} save={renamePerson} close={() => setRenameTarget(null)} />}
   </>
 }

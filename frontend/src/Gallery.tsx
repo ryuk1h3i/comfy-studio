@@ -6,7 +6,7 @@ import PhotoSwipe from 'photoswipe'
 import { ArrowDown, ArrowLeft, ArrowUpRight, Check, ChevronLeft, ChevronRight, Copy, Download, Expand, Eye, Layers, Maximize, RotateCcw, Search, SlidersHorizontal, Sparkles, Star, Trash2, WandSparkles, X } from 'lucide-react'
 import { api, queryString } from './api'
 import type { Asset, Page, Person, Tag } from './api'
-import { Busy, Empty, ErrorBox, IconButton, Notice, UploadPanel } from './ui'
+import { Busy, Empty, ErrorBox, IconButton, Notice, PersonNameDialog, UploadPanel } from './ui'
 import { Composer } from './Composer'
 import { useDetailNavigation } from './useDetailNavigation'
 
@@ -95,6 +95,7 @@ export function AssetDetail() {
   const [composer, setComposer] = useState<{ operation: string; action?: string } | null>(null)
   const [compare, setCompare] = useState(false)
   const [analysisSubmitting, setAnalysisSubmitting] = useState(false)
+  const [namingFace, setNamingFace] = useState<string | null>(null)
   const details = useRef<HTMLDivElement>(null)
   const value = asset.data
   useEffect(() => {
@@ -131,8 +132,14 @@ export function AssetDetail() {
       {(value.original || value.input) && <div className="lineage">{value.original && <Link to={`/assets/${value.original.id}`}><img src={value.original.thumb} alt="Originale iniziale" /><div><small>Originale iniziale</small><strong>{value.original.name}</strong></div><ArrowUpRight size={18} /></Link>}{value.input && value.input.id !== value.original?.id && <Link to={`/assets/${value.input.id}`}><img src={value.input.thumb} alt="Input immediato" /><div><small>Input utilizzato</small><strong>{value.input.name}</strong></div><ArrowUpRight size={18} /></Link>}</div>}
       {value.job && <section className="detail-section"><div className="section-toolbar"><h2>{value.job.operation === 'upscale' ? 'Parametri upscale' : 'Prompt utilizzato'}</h2>{value.job.instruction && <IconButton label="Copia prompt" onClick={async () => { try { await navigator.clipboard.writeText(value.job!.instruction); notice('Prompt copiato') } catch { notice('Accesso agli appunti non disponibile') } }}><Copy size={18} /></IconButton>}</div>{value.job.instruction && <p className="prompt-text">{value.job.instruction}</p>}{value.job.prompt_id && <Link className="text-link" to={`/prompts/${value.job.prompt_id}`}>Apri prompt · v{value.job.prompt_version}<ArrowUpRight size={16} /></Link>}<dl className="parameter-list"><div><dt>Seed</dt><dd>{value.job.settings.seed}</dd></div><div><dt>{value.job.operation === 'upscale' ? 'Fattore' : 'Risoluzione edit'}</dt><dd>{value.job.operation === 'upscale' ? `${value.job.settings.upscale_factor}x` : `${value.job.settings.edit_resolution} MP`}</dd></div><div><dt>LoRA</dt><dd>{value.job.settings.loras.map(item => `${item.name} (${item.weight})`).join(', ') || 'Nessuno'}</dd></div></dl></section>}
       <section className="detail-section"><div className="section-toolbar"><h2>Tag e persone</h2><button className="text-link" disabled={analysisSubmitting} onClick={requestAnalysis}><RotateCcw size={16} />{analysisSubmitting ? 'Invio...' : 'Analizza'}</button></div><span className="metadata" role="status">Analisi: {({ pending: 'In attesa del worker ML', done: 'Completata', failed: 'Non riuscita' } as Record<string, string>)[value.analysis] || value.analysis}</span>{value.analysis_error && <ErrorBox error={value.analysis_error} />}<div className="tag-list">{value.tags?.map(tag => <div className={`tag ${tag.state === 'suggested' ? 'suggested' : ''}`} key={tag.id}><span>{tag.name}</span>{tag.state === 'suggested' && <IconButton label={`Accetta ${tag.name}`} onClick={() => mutate(`/assets/${id}/tags/${tag.id}`, 'PUT', { state: 'accepted' })}><Check size={13} /></IconButton>}<IconButton label={`Rifiuta ${tag.name}`} onClick={() => mutate(`/assets/${id}/tags/${tag.id}`, 'PUT', { state: 'rejected' })}><X size={13} /></IconButton></div>)}</div><select aria-label="Aggiungi tag" value="" onChange={event => { if (event.target.value) mutate(`/assets/${id}/tags/${event.target.value}`, 'PUT', { state: 'manual' }) }}><option value="">Aggiungi tag manuale</option>{tags.data?.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>
-        {value.faces?.map((face, position) => <div className="face-row" key={face.id}><span>Volto {position + 1}{face.locked ? ' · confermato' : ''}</span><select aria-label={`Persona volto ${position + 1}`} value={face.person_id || ''} onChange={event => { if (event.target.value === 'new') { const name = prompt('Nome della persona'); if (name) mutate(`/faces/${face.id}`, 'PATCH', { new_person: name }) } else mutate(`/faces/${face.id}`, 'PATCH', { person_id: event.target.value || null }) }}><option value="">Non assegnato</option>{people.data?.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}<option value="new">Nuova persona...</option></select></div>)}
+        {value.faces?.map((face, position) => <div className="face-row" key={face.id}><span>Volto {position + 1}{face.locked ? ' · confermato' : ''}</span><select aria-label={`Persona volto ${position + 1}`} value={face.person_id || ''} onChange={event => { if (event.target.value === 'new') setNamingFace(face.id); else mutate(`/faces/${face.id}`, 'PATCH', { person_id: event.target.value || null }) }}><option value="">Non assegnato</option>{people.data?.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}<option value="new">Nuova persona...</option></select></div>)}
       </section><h2 className="section-heading">{value.kind === 'original' ? 'Tutte le elaborazioni' : 'Elaborazioni successive'}</h2><AssetGrid key={value.id} filters={related} />
     </div>{composer && <Composer asset={value} operation={composer.operation} action={composer.action} close={() => setComposer(null)} />}
+    {namingFace && <PersonNameDialog key={namingFace} initialName="" people={people.data || []} close={() => setNamingFace(null)} save={async name => {
+      await api(`/faces/${namingFace}`, 'PATCH', { new_person: name })
+      await cache.invalidateQueries({ queryKey: ['asset', id] })
+      await cache.invalidateQueries({ queryKey: ['people'] })
+      await cache.invalidateQueries({ queryKey: ['assets'] })
+    }} />}
   </>
 }

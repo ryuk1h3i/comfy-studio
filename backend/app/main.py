@@ -486,7 +486,7 @@ def assign_tag(identity: str, tag_id: str, payload: dict):
 def people():
     with session() as database:
         result = []
-        for person in database.scalars(select(Person)):
+        for person in sorted(database.scalars(select(Person)), key=lambda row: (row.name.casefold(), row.id)):
             faces = list(database.scalars(select(Face).where(Face.person_id == person.id)))
             if faces:
                 result.append({"id": person.id, "name": person.name, "count": len({face.asset_id for face in faces}),
@@ -498,16 +498,25 @@ def people():
 def edit_person(identity: str, payload: dict):
     with session() as database:
         person = get(database, Person, identity)
-        if payload.get("name"):
-            person.name = str(payload["name"])[:100]
+        target = None
+        if "name" in payload:
+            name = str(payload["name"]).strip()
+            if not name or len(name) > 100:
+                raise HTTPException(400, "Nome obbligatorio, massimo 100 caratteri")
+            target = next((row for row in database.scalars(select(Person))
+                           if row.id != identity and row.name.strip().casefold() == name.casefold()), None)
+            if target is None:
+                person.name = name
         if payload.get("merge_into"):
             target = get(database, Person, payload["merge_into"])
+        if target is not None:
             if target.id == identity:
                 raise HTTPException(400)
             for face in database.scalars(select(Face).where(Face.person_id == identity)):
                 face.person_id, face.locked = target.id, True
+            database.flush()
             database.delete(person)
-    return {"ok": True}
+        return {"ok": True, "id": target.id if target is not None else person.id}
 
 
 @app.patch("/api/faces/{identity}", dependencies=[Depends(auth.authenticated)])
@@ -516,9 +525,15 @@ def assign_face(identity: str, payload: dict):
         face = get(database, Face, identity)
         person_id = payload.get("person_id")
         if payload.get("new_person"):
-            person = Person(name=str(payload["new_person"])[:100])
-            database.add(person)
-            database.flush()
+            name = str(payload["new_person"]).strip()
+            if not name or len(name) > 100:
+                raise HTTPException(400, "Nome obbligatorio, massimo 100 caratteri")
+            person = next((row for row in database.scalars(select(Person))
+                           if row.name.strip().casefold() == name.casefold()), None)
+            if person is None:
+                person = Person(name=name)
+                database.add(person)
+                database.flush()
             person_id = person.id
         if person_id:
             get(database, Person, person_id)

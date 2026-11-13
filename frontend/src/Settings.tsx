@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, ArrowUp, Check, ExternalLink, LogOut, Pause, Play, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react'
 import { api, token } from './api'
 import type { Job, Page, Person, Preset, Settings, Tag } from './api'
-import { Busy, Empty, ErrorBox, IconButton, Notice } from './ui'
+import { Busy, Empty, ErrorBox, IconButton, Notice, PersonNameDialog } from './ui'
 
 const labels: Record<string, string> = { queued: 'In attesa', submitting: 'Invio', running: 'In elaborazione', succeeded: 'Completato', failed: 'Fallito', cancelled: 'Annullato', needs_attention: 'Da verificare' }
 
@@ -50,6 +50,7 @@ export function SettingsPage() {
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
   const [diagnostics, setDiagnostics] = useState<Record<string, { ok: boolean; error?: string }> | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<Person | null>(null)
   const [tagName, setTagName] = useState(''); const [tagDescription, setTagDescription] = useState(''); const [threshold, setThreshold] = useState(0.25)
   const cache = useQueryClient(); const notice = useContext(Notice)
   useEffect(() => { if (query.data) setValue(structuredClone(query.data)) }, [query.data])
@@ -77,7 +78,14 @@ export function SettingsPage() {
       finally { setScanning(false) }
     }}><RotateCcw size={17} />{scanning ? 'Accodamento...' : 'Riesegui scansione completa'}</button></section>
     <section className="settings-section"><h2>Vocabolario tag</h2><form className="form-stack" onSubmit={async event => { event.preventDefault(); await command('/tags', 'POST', { name: tagName, description: tagDescription || tagName, threshold }); setTagName(''); setTagDescription('') }}><div className="settings-fields"><label>Nome<input required maxLength={80} value={tagName} onChange={event => setTagName(event.target.value)} /></label><label>Descrizione visiva<input value={tagDescription} maxLength={300} onChange={event => setTagDescription(event.target.value)} /></label><label>Soglia similarità<input required type="number" min="-1" max="1" step="0.01" value={threshold} onChange={event => setThreshold(Number(event.target.value))} /></label></div><button className="secondary"><Plus size={17} />Salva tag</button></form><div className="vocabulary">{tags.data?.map(tag => <div key={tag.id}><div><strong>{tag.name}</strong><small>{tag.description} · {tag.threshold}</small></div><label className="check-label"><input type="checkbox" checked={tag.automatic} onChange={event => { if (event.target.checked && !confirm('Hai calibrato la soglia? La similarità non è una probabilità.')) return; command('/tags', 'POST', { ...tag, automatic: event.target.checked }) }} />Automatico</label><IconButton label="Modifica tag" onClick={() => { setTagName(tag.name); setTagDescription(tag.description); setThreshold(tag.threshold) }}><Save size={17} /></IconButton></div>)}</div></section>
-    <section className="settings-section"><h2>Persone</h2><div className="people-list">{people.data?.map(person => <div className="person-row" key={person.id}><img src={`/api/assets/${person.asset_id}/file/thumb`} alt={person.name} /><div><strong>{person.name}</strong><small>{person.count} immagini</small></div><IconButton label={`Rinomina ${person.name}`} onClick={() => { const name = prompt('Nome', person.name); if (name) command(`/people/${person.id}`, 'PATCH', { name }) }}><Save size={17} /></IconButton><select aria-label={`Unisci ${person.name}`} value="" onChange={event => { if (event.target.value && confirm('Unire queste persone?')) command(`/people/${person.id}`, 'PATCH', { merge_into: event.target.value }) }}><option value="">Unisci a...</option>{people.data.filter(other => other.id !== person.id).map(other => <option key={other.id} value={other.id}>{other.name}</option>)}</select></div>)}</div></section>
+    <section className="settings-section"><h2>Persone</h2><div className="people-list">{people.data?.map(person => <div className="person-row" key={person.id}><img src={`/api/assets/${person.asset_id}/file/thumb`} alt={person.name} /><div><strong>{person.name}</strong><small>{person.count} immagini</small></div><IconButton label={`Rinomina ${person.name}`} onClick={() => setRenameTarget(person)}><Save size={17} /></IconButton><select aria-label={`Unisci ${person.name}`} value="" onChange={event => { if (event.target.value && confirm('Unire queste persone?')) command(`/people/${person.id}`, 'PATCH', { merge_into: event.target.value }) }}><option value="">Unisci a...</option>{people.data.filter(other => other.id !== person.id).map(other => <option key={other.id} value={other.id}>{other.name}</option>)}</select></div>)}</div></section>
+    {renameTarget && <PersonNameDialog initialName={renameTarget.name} people={people.data || []} close={() => setRenameTarget(null)} save={async name => {
+      await api(`/people/${renameTarget.id}`, 'PATCH', { name })
+      await cache.invalidateQueries({ queryKey: ['people'] })
+      await cache.invalidateQueries({ queryKey: ['assets'] })
+      await cache.invalidateQueries({ queryKey: ['asset'] })
+      notice('Persona aggiornata')
+    }} />}
     <section className="settings-section"><h2>Connessioni</h2><div className="result-actions"><button className="secondary" onClick={async () => { try { setDiagnostics(await api('/diagnostics')) } catch (reason) { notice((reason as Error).message) } }}><RotateCcw size={17} />Verifica endpoint</button><button className="secondary" onClick={async () => { try { const result = await api<{ dimensions: number }>('/diagnostics/ml', 'POST'); notice(`Inferenza ML riuscita: ${result.dimensions} dimensioni`) } catch (reason) { notice((reason as Error).message) } }}><Play size={17} />Prova inferenza ML</button></div>{diagnostics && <div className="diagnostics">{Object.entries(diagnostics).map(([name, result]) => <div key={name}><span>{name}</span><span className={result.ok ? 'success-text' : 'error-text'}>{result.ok ? 'Connesso' : result.error}</span></div>)}</div>}</section>
   </>
 }
