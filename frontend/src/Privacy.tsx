@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { focusManager, useQuery, useQueryClient } from '@tanstack/react-query'
 import { LockKeyhole, LogOut, Save, UnlockKeyhole } from 'lucide-react'
 import { api } from './api'
@@ -26,6 +27,7 @@ export function PrivacyGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true
+    let revealFrame = 0
     async function initialize() {
       try {
         const result = await api<PrivacyStatus>('/privacy')
@@ -58,17 +60,25 @@ export function PrivacyGate({ children }: { children: ReactNode }) {
     }
     function conceal() {
       if (!current.current?.enabled) return
+      cancelAnimationFrame(revealFrame)
       document.documentElement.dataset.privacyCovered = 'true'
-      lock()
+      flushSync(lock)
     }
-    function reveal() { delete document.documentElement.dataset.privacyCovered }
+    function reveal() {
+      cancelAnimationFrame(revealFrame)
+      if (document.hidden) return
+      revealFrame = requestAnimationFrame(() => {
+        if (!document.hidden) delete document.documentElement.dataset.privacyCovered
+      })
+    }
     function visibility() { if (document.hidden) conceal(); else reveal() }
     function changed() { setStatus(null); void initialize() }
     window.addEventListener('blur', conceal)
     window.addEventListener('focus', reveal)
-    window.addEventListener('pagehide', conceal)
-    window.addEventListener('pageshow', visibility)
-    document.addEventListener('visibilitychange', visibility)
+    window.addEventListener('pagehide', conceal, true)
+    window.addEventListener('pageshow', visibility, true)
+    document.addEventListener('visibilitychange', visibility, true)
+    document.addEventListener('freeze', conceal, true)
     window.addEventListener('privacy-lock', lock)
     window.addEventListener('privacy-changed', changed)
     void initialize()
@@ -77,12 +87,14 @@ export function PrivacyGate({ children }: { children: ReactNode }) {
       generation.current += 1
       window.removeEventListener('blur', conceal)
       window.removeEventListener('focus', reveal)
-      window.removeEventListener('pagehide', conceal)
-      window.removeEventListener('pageshow', visibility)
-      document.removeEventListener('visibilitychange', visibility)
+      window.removeEventListener('pagehide', conceal, true)
+      window.removeEventListener('pageshow', visibility, true)
+      document.removeEventListener('visibilitychange', visibility, true)
+      document.removeEventListener('freeze', conceal, true)
       window.removeEventListener('privacy-lock', lock)
       window.removeEventListener('privacy-changed', changed)
-      reveal()
+      cancelAnimationFrame(revealFrame)
+      delete document.documentElement.dataset.privacyCovered
       delete document.documentElement.dataset.privacyLocked
       focusManager.setFocused(undefined)
     }
