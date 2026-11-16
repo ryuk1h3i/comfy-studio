@@ -17,6 +17,23 @@
 .privacy-heading p { color: var(--muted); }
 .privacy-screen form, .privacy-screen > .error { width: min(100%, 320px); }
 .privacy-screen input { width: 100%; }
+.icon-button.privacy-quick-lock {
+  position: fixed;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 2000;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 3px 12px #0003;
+}
+.icon-button.privacy-quick-lock:hover { background: var(--accent-hover); }
+@media (max-width: 700px) {
+  .icon-button.privacy-quick-lock { bottom: calc(68px + env(safe-area-inset-bottom)); }
+}
 .privacy-curtain {
   position: fixed;
   inset: 0;
