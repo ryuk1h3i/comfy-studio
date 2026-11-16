@@ -10,6 +10,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from .config import ADMIN_PASSWORD, SESSION_SECRET
 
 signer = URLSafeTimedSerializer(SESSION_SECRET, salt="studio-session-v1")
+device_signer = URLSafeTimedSerializer(SESSION_SECRET, salt="studio-device-v1")
 password_salt = hashlib.sha256(SESSION_SECRET.encode()).digest()
 password_hash = hashlib.scrypt(ADMIN_PASSWORD.encode(), salt=password_salt, n=16384, r=8, p=1)
 attempts = defaultdict(deque)
@@ -27,18 +28,39 @@ def login(request, password):
     if not hmac.compare_digest(candidate, password_hash):
         raise HTTPException(401, "Password non corretta")
     history.clear()
-    return {"csrf": secrets.token_hex(24)}
+    try:
+        device = device_signer.loads(request.cookies.get("studio_device", ""), max_age=31536000)
+    except (BadSignature, SignatureExpired):
+        device = secrets.token_hex(32)
+    return {"csrf": secrets.token_hex(24), "device": device}
 
 
-def authenticated(request: Request):
+def confirm_password(request, password):
+    try:
+        login(request, password)
+    except HTTPException as error:
+        if error.status_code == 401:
+            raise HTTPException(400, "Password non corretta") from None
+        raise
+
+
+def session_authenticated(request: Request):
     try:
         value = signer.loads(request.cookies.get("studio", ""), max_age=60 * 60 * 24 * 7)
     except (BadSignature, SignatureExpired):
         raise HTTPException(401, "Accedi per continuare") from None
+    value.setdefault("device", hashlib.sha256(value["csrf"].encode()).hexdigest())
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         if not hmac.compare_digest(request.headers.get("x-csrf-token", ""), value["csrf"]):
             raise HTTPException(403, "Sessione non valida: ricarica la pagina")
         origin = request.headers.get("origin")
         if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
             raise HTTPException(403, "Origine non consentita")
+    return value
+
+
+def authenticated(request: Request):
+    from .privacy import require_unlocked
+    value = session_authenticated(request)
+    require_unlocked(value)
     return value

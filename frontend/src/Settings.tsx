@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowUp, Check, ExternalLink, LogOut, Pause, Play, Plus, Rot
 import { api, token } from './api'
 import type { Job, Page, Person, Preset, Settings, Tag } from './api'
 import { Busy, Empty, ErrorBox, IconButton, Notice, PersonNameDialog } from './ui'
+import { PrivacySettings } from './Privacy'
 
 const labels: Record<string, string> = { queued: 'In attesa', submitting: 'Invio', running: 'In elaborazione', succeeded: 'Completato', failed: 'Fallito', cancelled: 'Annullato', needs_attention: 'Da verificare' }
 
@@ -66,6 +67,7 @@ export function SettingsPage() {
       <section className="settings-section"><h2>Prompt rapidi</h2><label>Slot attivo<select value={value.active_slot} onChange={event => setValue({ ...value, active_slot: event.target.value })}><option value="0">Vuoto</option>{[1, 2, 3, 4, 5].map(number => <option key={number} value={number}>Slot {number}</option>)}</select></label><div className="quick-slots">{[1, 2, 3, 4, 5].map(number => <label key={number}>Slot {number}<select value={value.quick_slots[number] || ''} onChange={event => setValue({ ...value, quick_slots: { ...value.quick_slots, [number]: event.target.value } })}><option value="">Vuoto</option>{presets.data?.items.map(preset => <option key={preset.id} value={preset.id}>{preset.title}</option>)}</select></label>)}</div></section>
       <ErrorBox error={error} /><button className="primary" disabled={busy}><Save size={18} />Salva impostazioni</button>
     </form>
+    <PrivacySettings />
     <section className="settings-section"><h2>Scansione immagini</h2><button className="secondary" disabled={scanning} onClick={async () => {
       if (!confirm('Riaccodare la scansione di tag e volti per tutte le immagini fuori dal cestino? Le assegnazioni manuali saranno conservate.')) return
       setScanning(true)

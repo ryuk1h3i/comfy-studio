@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import '@fontsource/manrope/400.css'
 import '@fontsource/manrope/600.css'
@@ -8,7 +8,14 @@ import '@fontsource/space-grotesk/500.css'
 import 'photoswipe/style.css'
 import './style.css'
 import './appearance.css'
+import './privacy.css'
 import App from './App'
+
+focusManager.setEventListener(setFocused => {
+	const visibility = () => setFocused(!document.hidden && !document.documentElement.hasAttribute('data-privacy-locked'))
+	document.addEventListener('visibilitychange', visibility)
+	return () => document.removeEventListener('visibilitychange', visibility)
+})
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 5000 }, mutations: { retry: false } } })
 ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><QueryClientProvider client={queryClient}><BrowserRouter><App /></BrowserRouter></QueryClientProvider></React.StrictMode>)

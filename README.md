@@ -70,6 +70,18 @@ Il certificato deve essere attendibile dal telefono: installare la CA locale o u
 
 Da Impostazioni verificare gli endpoint e provare **Inferenza ML**: il ping non prova compatibilita dei modelli. Impostare LoRA gia presenti in ComfyUI o rimuoverli tutti.
 
+## Blocco privacy con PIN
+
+In **Impostazioni > Blocco privacy**, inserire la password completa e un PIN di 6-12 cifre, con conferma. Usare un PIN diverso dal codice di sblocco del telefono. Il PIN si attiva solo sul browser corrente: e possibile proteggerne l'accesso dal telefono e usare contemporaneamente il PC senza blocco aggiuntivo. Ogni browser puo avere un PIN diverso ed e senza PIN finche non viene configurato. Per cambiarlo o disattivarlo su quel browser serve la password completa. Dopo l'attivazione viene richiesto subito lo sblocco.
+
+Quando la pagina perde il focus, viene nascosta o passa in background, una copertura opaca nasconde i contenuti e viene richiesto il blocco al server. Il lucchetto in testata blocca anche manualmente. Al rientro e al ricaricamento si inserisce il PIN, senza rifare il login. Il modulo di sblocco offre anche la password completa in caso di PIN dimenticato. Le bozze della pagina restano nascoste durante il blocco; i job gia accodati continuano sul server.
+
+Il backend protegge anche API e immagini: per un browser protetto, il cookie di login da solo non basta senza uno sblocco valido. L'identita del browser e memorizzata in un cookie firmato HttpOnly e incorporata nella sessione firmata; cancellare il solo cookie identificativo non elimina il requisito PIN di una sessione gia aperta. L'identita resta dopo il logout e viene ripresa al login successivo. Lo sblocco ha una durata di 60 secondi, rinnovata ogni 15 secondi mentre l'app e visibile; se il sistema sospende il browser prima che il blocco venga trasmesso, l'accesso scade comunque entro tale intervallo. Il PIN e conservato nel database come hash scrypt con sale casuale; dopo cinque errori iniziano attese crescenti, persistenti ai riavvii e separate per browser. Cambiare il PIN revoca solo lo sblocco di quel browser. Le schede che condividono la stessa identita condividono anche il blocco.
+
+Cancellando tutti i cookie del sito o usando un browser nuovo/incognito sara necessario il login con la password completa e il PIN andra configurato di nuovo. Il cookie identificativo dura un anno e viene rinnovato al login o alla configurazione del PIN. Browser e PWA condividono il PIN solo se il sistema condivide i cookie tra i due; altrimenti vanno configurati separatamente. La password completa resta una credenziale di recupero: proteggerla anche nei gestori password del telefono.
+
+La copertura nel selettore delle app dipende dal browser e dal momento in cui il sistema cattura l'anteprima: non e una garanzia contro screenshot, immagini gia scaricate, strumenti sviluppatore o accesso al database/filesystem. Usare sempre HTTPS. La migrazione `0003`, eseguita automaticamente dall'API al deploy, aggiunge le tabelle privacy senza ricreare i volumi.
+
 ## Immich ML remoto
 
 All'avvio del worker di analisi, se il vocabolario tag e vuoto vengono create 18 categorie visive generiche e riaccodate tutte le immagini fuori dal cestino. I risultati sono suggerimenti basati sulla soglia di similarita, non etichette garantite per ogni immagine. I vocabolari gia configurati non vengono modificati; descrizioni, soglie e assegnazione automatica si gestiscono nelle Impostazioni. Nel tab Volti e tag, il pulsante Rinomina persona permette di cambiare il nome della persona selezionata.

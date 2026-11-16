@@ -37,6 +37,21 @@ class Settings(Base):
     value: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class PrivacyDevice(Base):
+    __tablename__ = "privacy_devices"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    pin_hash: Mapped[str] = mapped_column(String(128), default="")
+    salt: Mapped[str] = mapped_column(String(64), default="")
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    blocked_until: Mapped[float] = mapped_column(Float, default=0)
+
+
+class PrivacyUnlock(Base):
+    __tablename__ = "privacy_unlocks"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires: Mapped[float] = mapped_column(Float)
+
+
 class Prompt(Base):
     __tablename__ = "prompts"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=identifier)

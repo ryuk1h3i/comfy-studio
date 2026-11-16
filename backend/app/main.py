@@ -11,12 +11,13 @@ from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, inspect, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
+from starlette.concurrency import run_in_threadpool
 
-from . import auth
+from . import auth, privacy
 from .config import COMFYUI_URL, COOKIE_SECURE, IMMICH_ML_URL, MAX_UPLOAD, PRODUCTION
 from .db import Asset, AssetTag, Face, Job, JobTiming, Person, Prompt, PromptVersion, Settings, Tag, engine, initialize, now, session
 from .jobs import current_settings, enqueue
-from .schemas import JobInput, LoginInput, PromptBulkInput, PromptInput
+from .schemas import JobInput, LoginInput, PinInput, PrivacyInput, PromptBulkInput, PromptInput
 from .storage import location, store
 from .workflows import validate_settings
 
@@ -84,20 +85,61 @@ def login(payload: LoginInput, request: Request, response: Response):
     if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
         raise HTTPException(403, "Origine non consentita")
     value = auth.login(request, payload.password)
-    response.set_cookie("studio", auth.signer.dumps(value), httponly=True, secure=COOKIE_SECURE,
-                        samesite="strict", max_age=604800)
+    set_session_cookies(response, value)
     return value
 
 
+def set_session_cookies(response, value):
+    response.set_cookie("studio", auth.signer.dumps(value), httponly=True, secure=COOKIE_SECURE,
+                        samesite="strict", max_age=604800)
+    response.set_cookie("studio_device", auth.device_signer.dumps(value["device"]), httponly=True, secure=COOKIE_SECURE,
+                        samesite="strict", max_age=31536000)
+
+
 @app.get("/api/session")
-def user(value=Depends(auth.authenticated)):
+def user(value=Depends(auth.session_authenticated)):
     return {**value, "development": not PRODUCTION}
 
 
-@app.post("/api/logout", dependencies=[Depends(auth.authenticated)])
-def logout(response: Response):
+@app.post("/api/logout")
+def logout(response: Response, value=Depends(auth.session_authenticated)):
+    privacy.lock(value)
     response.delete_cookie("studio")
     return {"ok": True}
+
+
+@app.get("/api/privacy")
+def privacy_status(value=Depends(auth.session_authenticated)):
+    return privacy.status(value)
+
+
+@app.put("/api/privacy")
+def privacy_configure(payload: PrivacyInput, request: Request, response: Response, value=Depends(auth.session_authenticated)):
+    auth.confirm_password(request, payload.password)
+    result = privacy.configure(value, payload.pin)
+    set_session_cookies(response, value)
+    return result
+
+
+@app.post("/api/privacy/lock")
+def privacy_lock(value=Depends(auth.session_authenticated)):
+    return privacy.lock(value)
+
+
+@app.post("/api/privacy/unlock")
+def privacy_unlock(payload: PinInput, value=Depends(auth.session_authenticated)):
+    return privacy.unlock(value, payload.pin)
+
+
+@app.post("/api/privacy/password")
+def privacy_password(payload: LoginInput, request: Request, value=Depends(auth.session_authenticated)):
+    auth.confirm_password(request, payload.password)
+    return privacy.unlock_with_password(value)
+
+
+@app.post("/api/privacy/heartbeat")
+def privacy_heartbeat(value=Depends(auth.session_authenticated)):
+    return privacy.heartbeat(value)
 
 
 @app.get("/api/settings", dependencies=[Depends(auth.authenticated)])
@@ -392,10 +434,13 @@ async def recover_job(identity: str):
     return {"ok": True}
 
 
-@app.get("/api/events", dependencies=[Depends(auth.authenticated)])
-async def events(request: Request):
+@app.get("/api/events")
+async def events(request: Request, value=Depends(auth.authenticated)):
     async def stream():
         while not await request.is_disconnected():
+            if (await run_in_threadpool(privacy.status, value))["locked"]:
+                yield "event: locked\ndata: {}\n\n"
+                return
             yield "event: refresh\ndata: {}\n\n"
             await asyncio.sleep(4)
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})

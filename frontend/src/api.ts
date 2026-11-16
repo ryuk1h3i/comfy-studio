@@ -27,14 +27,15 @@ export interface Page<T> { items: T[]; next: number | null }
 
 let csrf = ''
 export function setCsrf(value: string) { csrf = value }
-export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+export async function api<T>(path: string, method = 'GET', body?: unknown, options?: Pick<RequestInit, 'keepalive' | 'signal'>): Promise<T> {
   const headers: Record<string, string> = {}
   if (method !== 'GET') headers['x-csrf-token'] = csrf
   if (body && !(body instanceof FormData)) headers['content-type'] = 'application/json'
-  const response = await fetch('/api' + path, { method, headers, credentials: 'same-origin', body: body instanceof FormData ? body : body === undefined ? undefined : JSON.stringify(body) })
+  const response = await fetch('/api' + path, { ...options, method, headers, credentials: 'same-origin', body: body instanceof FormData ? body : body === undefined ? undefined : JSON.stringify(body) })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }))
     if (response.status === 401 && path !== '/login' && path !== '/session') window.dispatchEvent(new Event('session-expired'))
+    if (response.status === 423) window.dispatchEvent(new Event('privacy-lock'))
     throw new Error(typeof error.detail === 'string' ? error.detail : 'Dati non validi')
   }
   return response.json()

@@ -1,0 +1,37 @@
+.privacy-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  background: var(--background);
+  color: var(--ink);
+}
+.privacy-heading { display: grid; justify-items: center; gap: 12px; text-align: center; }
+.privacy-heading h1 { font-size: 28px; }
+.privacy-heading p { color: var(--muted); }
+.privacy-screen form, .privacy-screen > .error { width: min(100%, 320px); }
+.privacy-screen input { width: 100%; }
+.privacy-curtain { display: none; }
+html[data-privacy-covered] .privacy-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  background: var(--background);
+  color: var(--muted);
+}
+html[data-privacy-covered] .privacy-content { visibility: hidden; }
+html[data-privacy-covered] dialog,
+html[data-privacy-covered] .pswp,
+html[data-privacy-locked] .pswp,
+html[data-privacy-locked] dialog { visibility: hidden !important; }
+@media (max-height: 480px) {
+  .privacy-screen { justify-content: flex-start; gap: 16px; }
+}

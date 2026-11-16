@@ -6,6 +6,15 @@ class LoginInput(BaseModel):
     password: str = Field(max_length=1024)
 
 
+class PrivacyInput(BaseModel):
+    password: str = Field(min_length=1, max_length=1024)
+    pin: str = Field(default="", pattern=r"^(?:[0-9]{6,12})?$")
+
+
+class PinInput(BaseModel):
+    pin: str = Field(pattern=r"^[0-9]{6,12}$")
+
+
 class PromptInput(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     text: str = Field(min_length=1, max_length=12000)
