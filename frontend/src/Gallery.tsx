@@ -42,13 +42,16 @@ export function AssetGrid({ filters, selection, selected, onItems, onOpen }: { f
   }, [query.isPending])
   useEffect(() => { onItems?.(items) }, [query.data])
   const rows = virtual.getVirtualItems()
-  useEffect(() => { if (rows.at(-1)?.index === rowCount - 1 && query.hasNextPage && !query.isFetchingNextPage) query.fetchNextPage() }, [rows.at(-1)?.index, rowCount, query.hasNextPage])
+  useEffect(() => {
+    const lastRow = rows.at(-1)?.index
+    if (lastRow !== undefined && lastRow >= rowCount - 3 && query.hasNextPage && !query.isFetching && !query.isError) query.fetchNextPage()
+  }, [rows.at(-1)?.index, rowCount, query.hasNextPage, query.isFetching, query.isError])
   if (query.error) return <ErrorBox error={query.error} />
   if (query.isPending) return <Busy />
   if (!items.length) return <Empty title="Nessuna immagine" />
   return <div ref={element} className="gallery-grid" style={{ height: virtual.getTotalSize() }}><div className="grid-window">{rows.map(row => <div key={row.key} className="gallery-row" style={{ position: 'absolute', top: 0, width: '100%', transform: `translateY(${row.start - margin}px)`, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, height: rowHeight }}>{items.slice(row.index * columns, (row.index + 1) * columns).map(asset => <div className="asset-tile" key={asset.id}>
     <Link to={`/assets/${asset.id}`} className={`asset-image ${selected?.has(asset.id) ? 'selected' : ''}`} onClick={event => { if (onOpen || selection) { event.preventDefault(); (onOpen || selection)?.(asset) } }}><img src={asset.thumb} alt={asset.name} loading="lazy" width={asset.width} height={asset.height} /><span className="asset-badges">{asset.operation && <span>{asset.operation}</span>}{asset.favorite && <Star size={15} fill="currentColor" />}</span></Link>{selection && <button type="button" className="select-mark" role="checkbox" aria-checked={selected?.has(asset.id) || false} aria-label={`Seleziona ${asset.name}`} title={`Seleziona ${asset.name}`} onClick={() => selection(asset)}>{selected?.has(asset.id) ? <Check size={18} /> : null}</button>}
-  </div>)}</div>)}</div>{query.isFetchingNextPage && <span className="grid-loading">Caricamento...</span>}</div>
+  </div>)}</div>)}</div>{query.hasNextPage && <button type="button" className="secondary grid-loading" disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>{query.isFetchingNextPage ? 'Caricamento...' : 'Carica altre immagini'}</button>}</div>
 }
 
 export function Gallery({ kind }: { kind: 'original' | 'edit' }) {
@@ -97,13 +100,15 @@ export function AssetDetail() {
   const [analysisSubmitting, setAnalysisSubmitting] = useState(false)
   const [namingFace, setNamingFace] = useState<string | null>(null)
   const details = useRef<HTMLDivElement>(null)
+  const photoViewer = useRef<PhotoSwipe | null>(null)
+  const zoomRequest = useRef(0)
+  const zoomOpening = useRef(false)
   const value = asset.data
   useEffect(() => {
     if (value?.analysis === 'done') cache.invalidateQueries({ queryKey: ['people'] })
   }, [value?.id, value?.analysis, cache])
   const navigation = useDetailNavigation(`/assets?kind=${value?.kind || 'original'}`, id, value?.kind === 'edit' ? '/edits' : '/assets', !!value)
-  const siblings = useQuery({ queryKey: ['assets', 'viewer', value?.kind], enabled: !!value, queryFn: () => api<Page<Asset>>(`/assets?kind=${value?.kind}&limit=100`) })
-  const nearby = siblings.data?.items || []
+  useEffect(() => () => { zoomRequest.current += 1; zoomOpening.current = false; photoViewer.current?.destroy(); photoViewer.current = null }, [id])
   useEffect(() => { window.scrollTo(0, 0); setCompare(false) }, [id])
   async function mutate(path: string, method: string, payload: unknown) {
     try { await api(path, method, payload); cache.invalidateQueries({ queryKey: ['asset', id] }); cache.invalidateQueries({ queryKey: ['people'] }); cache.invalidateQueries({ queryKey: ['assets'] }) } catch (reason) { notice((reason as Error).message) }
@@ -117,11 +122,50 @@ export function AssetDetail() {
     } catch (reason) { notice((reason as Error).message) }
     finally { setAnalysisSubmitting(false) }
   }
-  function zoom() {
-    if (!value) return
-    const items = nearby.some(item => item.id === value.id) ? nearby : [value]
-    const viewer = new PhotoSwipe({ dataSource: items.map(item => ({ src: `/api/assets/${item.id}/file/original`, msrc: item.preview, width: item.width, height: item.height, alt: item.name })), index: Math.max(0, items.findIndex(item => item.id === value.id)), bgOpacity: 1, wheelToZoom: true, showAnimationDuration: 0, hideAnimationDuration: 0 })
-    viewer.init()
+  async function zoom() {
+    if (!value || zoomOpening.current || photoViewer.current) return
+    zoomOpening.current = true
+    const request = ++zoomRequest.current
+    const items: Asset[] = []
+    let offset: number | null = 0
+    const slides: { src: string; msrc: string; width: number; height: number; alt: string }[] = []
+    async function loadPage() {
+      const page = await api<Page<Asset>>(`/assets?kind=${value!.kind}&deleted=${value!.deleted}&limit=100&offset=${offset}`)
+      items.push(...page.items)
+      slides.push(...page.items.map(item => ({ src: `/api/assets/${item.id}/file/original`, msrc: item.preview, width: item.width, height: item.height, alt: item.name })))
+      offset = page.next
+    }
+    try {
+      while (offset !== null && !items.some(item => item.id === value.id)) {
+        await loadPage()
+        if (request !== zoomRequest.current) return
+      }
+      if (!items.some(item => item.id === value.id)) {
+        items.unshift(value)
+        slides.unshift({ src: `/api/assets/${value.id}/file/original`, msrc: value.preview, width: value.width, height: value.height, alt: value.name })
+      }
+      const viewer = new PhotoSwipe({ dataSource: slides, index: items.findIndex(item => item.id === value.id), loop: false, bgOpacity: 1, wheelToZoom: true, showAnimationDuration: 0, hideAnimationDuration: 0 })
+      photoViewer.current = viewer
+      let fetching = false
+      async function loadNearby() {
+        if (fetching || offset === null || viewer.currIndex < slides.length - 5) return
+        fetching = true
+        try {
+          while (offset !== null && viewer.currIndex >= slides.length - 5 && photoViewer.current === viewer) {
+            const previousLength = slides.length
+            await loadPage()
+            if (photoViewer.current !== viewer) return
+            viewer.refreshSlideContent(previousLength)
+            viewer.dispatch('change')
+          }
+        } catch (reason) { notice((reason as Error).message) }
+        finally { fetching = false }
+      }
+      viewer.on('change', loadNearby)
+      viewer.on('destroy', () => { if (photoViewer.current === viewer) photoViewer.current = null })
+      viewer.init()
+    } catch (reason) { if (request === zoomRequest.current) notice((reason as Error).message) }
+    finally { if (request === zoomRequest.current) zoomOpening.current = false }
   }
   if (asset.isPending) return <Busy />
   if (!value) return <ErrorBox error={asset.error} />
@@ -132,7 +176,7 @@ export function AssetDetail() {
       {(value.original || value.input) && <div className="lineage">{value.original && <Link to={`/assets/${value.original.id}`}><img src={value.original.thumb} alt="Originale iniziale" /><div><small>Originale iniziale</small><strong>{value.original.name}</strong></div><ArrowUpRight size={18} /></Link>}{value.input && value.input.id !== value.original?.id && <Link to={`/assets/${value.input.id}`}><img src={value.input.thumb} alt="Input immediato" /><div><small>Input utilizzato</small><strong>{value.input.name}</strong></div><ArrowUpRight size={18} /></Link>}</div>}
       {value.job && <section className="detail-section"><div className="section-toolbar"><h2>{value.job.operation === 'upscale' ? 'Parametri upscale' : 'Prompt utilizzato'}</h2>{value.job.instruction && <IconButton label="Copia prompt" onClick={async () => { try { await navigator.clipboard.writeText(value.job!.instruction); notice('Prompt copiato') } catch { notice('Accesso agli appunti non disponibile') } }}><Copy size={18} /></IconButton>}</div>{value.job.instruction && <p className="prompt-text">{value.job.instruction}</p>}{value.job.prompt_id && <Link className="text-link" to={`/prompts/${value.job.prompt_id}`}>Apri prompt · v{value.job.prompt_version}<ArrowUpRight size={16} /></Link>}<dl className="parameter-list"><div><dt>Seed</dt><dd>{value.job.settings.seed}</dd></div><div><dt>{value.job.operation === 'upscale' ? 'Fattore' : 'Risoluzione edit'}</dt><dd>{value.job.operation === 'upscale' ? `${value.job.settings.upscale_factor}x` : `${value.job.settings.edit_resolution} MP`}</dd></div><div><dt>LoRA</dt><dd>{value.job.settings.loras.map(item => `${item.name} (${item.weight})`).join(', ') || 'Nessuno'}</dd></div></dl></section>}
       <section className="detail-section"><div className="section-toolbar"><h2>Tag e persone</h2><button className="text-link" disabled={analysisSubmitting} onClick={requestAnalysis}><RotateCcw size={16} />{analysisSubmitting ? 'Invio...' : 'Analizza'}</button></div><span className="metadata" role="status">Analisi: {({ pending: 'In attesa del worker ML', done: 'Completata', failed: 'Non riuscita' } as Record<string, string>)[value.analysis] || value.analysis}</span>{value.analysis_error && <ErrorBox error={value.analysis_error} />}<div className="tag-list">{value.tags?.map(tag => <div className={`tag ${tag.state === 'suggested' ? 'suggested' : ''}`} key={tag.id}><span>{tag.name}</span>{tag.state === 'suggested' && <IconButton label={`Accetta ${tag.name}`} onClick={() => mutate(`/assets/${id}/tags/${tag.id}`, 'PUT', { state: 'accepted' })}><Check size={13} /></IconButton>}<IconButton label={`Rifiuta ${tag.name}`} onClick={() => mutate(`/assets/${id}/tags/${tag.id}`, 'PUT', { state: 'rejected' })}><X size={13} /></IconButton></div>)}</div><select aria-label="Aggiungi tag" value="" onChange={event => { if (event.target.value) mutate(`/assets/${id}/tags/${event.target.value}`, 'PUT', { state: 'manual' }) }}><option value="">Aggiungi tag manuale</option>{tags.data?.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>
-        {value.faces?.map((face, position) => <div className="face-row" key={face.id}><span>Volto {position + 1}{face.locked ? ' · confermato' : ''}</span><select aria-label={`Persona volto ${position + 1}`} value={face.person_id || ''} onChange={event => { if (event.target.value === 'new') setNamingFace(face.id); else mutate(`/faces/${face.id}`, 'PATCH', { person_id: event.target.value || null }) }}><option value="">Non assegnato</option>{people.data?.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}<option value="new">Nuova persona...</option></select></div>)}
+        {value.faces?.map((face, position) => <div className="face-row" key={face.id}><span>Volto {position + 1}{face.locked ? ' · confermato' : ''}{face.person_id && <Link className="text-link" to={`/explore?mode=faces&kind=all&person=${encodeURIComponent(face.person_id)}`} title="Vedi tutte le foto di questa persona">{people.data?.find(person => person.id === face.person_id)?.name || 'Foto della persona'}<ArrowUpRight size={16} /></Link>}</span><select aria-label={`Persona volto ${position + 1}`} value={face.person_id || ''} onChange={event => { if (event.target.value === 'new') setNamingFace(face.id); else mutate(`/faces/${face.id}`, 'PATCH', { person_id: event.target.value || null }) }}><option value="">Non assegnato</option>{people.data?.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}<option value="new">Nuova persona...</option></select></div>)}
       </section><h2 className="section-heading">{value.kind === 'original' ? 'Tutte le elaborazioni' : 'Elaborazioni successive'}</h2><AssetGrid key={value.id} filters={related} />
     </div>{composer && <Composer asset={value} operation={composer.operation} action={composer.action} close={() => setComposer(null)} />}
     {namingFace && <PersonNameDialog key={namingFace} initialName="" people={people.data || []} close={() => setNamingFace(null)} save={async name => {

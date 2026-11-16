@@ -1,14 +1,35 @@
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
-async function fixtures(page: Page) {
-  const login = await page.request.post('/api/login', { data: { password: process.env.STUDIO_TEST_PASSWORD || 'studio-local-change-me' } })
-  expect(login.ok()).toBeTruthy()
-  const response = await page.request.get('/api/assets?kind=original&limit=1').then(result => result.json())
-  const template = response.items[0]
-  const assets = Array.from({ length: 18 }, (_, position) => ({ ...template, id: `navigation-image-${position}`, name: `Immagine ${position}`, tags: [], faces: [] }))
+async function fixtures(page: Page, count = 18, isolated = false) {
+  let template
+  if (isolated) {
+    const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
+    template = { kind: 'original', width: 640, height: 640, preview: image, thumb: image, favorite: false, deleted: false, analysis: 'done' }
+    await page.route('**/api/**', route => {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/api/session') return route.fulfill({ json: { csrf: 'pagination-test', development: true } })
+      if (path === '/api/settings') return route.fulfill({ json: { quick_slots: {}, active_slot: '0' } })
+      if (path === '/api/login') return route.fulfill({ json: { csrf: 'pagination-test' } })
+      if (path === '/api/assets') return route.fulfill({ json: { items: [{ kind: 'original', width: 640, height: 640, preview: image, thumb: image, favorite: false, deleted: false, analysis: 'done' }], next: null } })
+      if (path.endsWith('/file/original')) return route.fulfill({ contentType: 'image/png', body: Buffer.from(image.split(',')[1], 'base64') })
+      return route.fulfill({ json: [] })
+    })
+  } else {
+    const login = await page.request.post('/api/login', { data: { password: process.env.STUDIO_TEST_PASSWORD || 'studio-local-change-me' } })
+    expect(login.ok()).toBeTruthy()
+    const response = await page.request.get('/api/assets?kind=original&limit=1').then(result => result.json())
+    template = response.items[0]
+  }
+  const assets = Array.from({ length: count }, (_, position) => ({ ...template, id: `navigation-image-${position}`, name: `Immagine ${position}`, tags: [], faces: [] }))
   const prompts = Array.from({ length: 3 }, (_, position) => ({ id: `navigation-prompt-${position}`, title: `Prompt navigabile ${position}`, text: `Istruzione ${position}`, category: '', tags: [], favorite: false, version: 1, versions: [] }))
-  await page.route('**/api/assets?**', route => route.fulfill({ json: { items: route.request().url().includes('kind=edit') ? [] : assets, next: null } }))
+  await page.route('**/api/assets?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    const offset = Number(params.get('offset') || 0)
+    const limit = Number(params.get('limit') || 60)
+    const items = params.get('kind') === 'edit' ? [] : assets
+    return route.fulfill({ json: { items: items.slice(offset, offset + limit), next: offset + limit < items.length ? offset + limit : null } })
+  })
   await page.route('**/api/assets/navigation-image-*', route => route.fulfill({ json: assets.find(asset => route.request().url().endsWith(`/${asset.id}`)) }))
   await page.route('**/api/prompts?**', route => route.fulfill({ json: { items: prompts, next: null } }))
   await page.route('**/api/prompts/navigation-prompt-*', route => route.fulfill({ json: prompts.find(prompt => route.request().url().endsWith(`/${prompt.id}`)) }))
@@ -103,4 +124,47 @@ test('pallino seleziona e composer accoda tutte senza duplicare dopo errore parz
   expect(requests[1].token).toBe(requests[2].token)
   expect(requests[0].token).not.toBe(requests[1].token)
   await expect(page.getByText('0 selezionate', { exact: true })).toBeVisible()
+})
+
+test('zoom supera cento immagini e apre direttamente immagini piu vecchie', async ({ page }) => {
+  await fixtures(page, 135, true)
+  await page.goto('/assets/navigation-image-98')
+  await page.getByRole('button', { name: 'Zoom immagine', exact: true }).click()
+  const viewer = page.locator('.pswp--open')
+  await expect(viewer.locator('.pswp__counter')).toHaveText('99 / 135')
+  await viewer.locator('.pswp__button--arrow--next').click()
+  await expect(viewer.locator('.pswp__counter')).toHaveText('100 / 135')
+  await viewer.locator('.pswp__button--arrow--next').click()
+  await expect(viewer.locator('.pswp__counter')).toHaveText('101 / 135')
+  await expect(viewer.locator('.pswp__img[alt="Immagine 100"]').first()).toBeVisible()
+  await viewer.locator('.pswp__button--close').click()
+  await page.goto('/assets/navigation-image-134')
+  await page.getByRole('button', { name: 'Zoom immagine', exact: true }).click()
+  await expect(viewer.locator('.pswp__counter')).toHaveText('135 / 135')
+  await expect(viewer.locator('.pswp__button--arrow--next')).toBeDisabled()
+  await viewer.locator('.pswp__button--arrow--prev').click()
+  await expect(viewer.locator('.pswp__counter')).toHaveText('134 / 135')
+})
+
+test('galleria e selezione job raggiungono le immagini oltre cento', async ({ page }) => {
+  const { assets, prompts } = await fixtures(page, 135, true)
+  for (const path of ['/originals', `/originals?pick_prompt=${prompts[0].id}`]) {
+    await page.goto(path)
+    for (const offset of [60, 120]) {
+      const nextPage = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return url.pathname === '/api/assets' && url.searchParams.get('offset') === String(offset)
+      })
+      await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
+      await nextPage
+    }
+    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
+    await expect(page.locator(`.asset-image img[alt="${assets[134].name}"]`)).toBeVisible()
+    if (path.includes('pick_prompt')) {
+      await page.getByRole('checkbox', { name: `Seleziona ${assets[134].name}`, exact: true }).click()
+      await expect(page.getByText('1 selezionate', { exact: true })).toBeVisible()
+      await page.locator(`.asset-image img[alt="${assets[134].name}"]`).click()
+      await expect(page.getByRole('dialog').getByText(assets[134].name, { exact: true })).toBeVisible()
+    }
+  }
 })
