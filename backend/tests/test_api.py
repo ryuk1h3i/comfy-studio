@@ -23,6 +23,37 @@ def test_bulk_prompts_are_validated_and_versioned():
         assert client.post("/api/prompts/bulk", json={"items": [{"title": "Uno", "text": "Test"}]}).status_code == 403
 
 
+def test_prompt_list_shows_latest_available_thumbnail():
+    from datetime import timedelta
+    from app.db import Job, now, session
+    from app.storage import store
+
+    with TestClient(app) as client:
+        login = client.post("/api/login", json={"password": ADMIN_PASSWORD})
+        client.headers["x-csrf-token"] = login.json()["csrf"]
+        title = f"Thumbnail-{uuid.uuid4().hex}"
+        preset = client.post("/api/prompts", json={"title": title, "text": "A landscape"}).json()
+
+        def listed_prompt():
+            return client.get("/api/prompts", params={"q": title}).json()["items"][0]
+
+        assert listed_prompt()["latest_thumb"] is None
+        job = client.post("/api/jobs", json={"token": uuid.uuid4().hex, "operation": "create", "prompt_id": preset["id"]}).json()
+        image = io.BytesIO()
+        Image.new("RGB", (32, 24), "green").save(image, "PNG")
+        with session() as database:
+            row = database.get(Job, job["id"])
+            older = store(database, image.getvalue(), "older.png", "edit", row, f"{row.id}:0")
+            older.created = now() - timedelta(minutes=1)
+            latest = store(database, image.getvalue(), "latest.png", "edit", row, f"{row.id}:1")
+        assert listed_prompt()["latest_thumb"] == f"/api/assets/{latest.id}/file/thumb"
+        assert client.get(listed_prompt()["latest_thumb"]).status_code == 200
+        client.patch(f"/api/assets/{latest.id}", json={"deleted": True})
+        assert listed_prompt()["latest_thumb"] == f"/api/assets/{older.id}/file/thumb"
+        client.patch(f"/api/assets/{older.id}", json={"deleted": True})
+        assert listed_prompt()["latest_thumb"] is None
+
+
 def test_reanalyze_resets_previous_failure():
     from app.db import Asset, session
 

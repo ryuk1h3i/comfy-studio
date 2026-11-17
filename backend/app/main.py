@@ -179,6 +179,8 @@ def prompts(q: str = "", favorite: bool = False, offset: int = Query(0, ge=0), l
         for row in rows[:limit]:
             value = serialize(row)
             value["results"] = database.scalar(select(func.count()).select_from(Asset).join(Job, Job.id == Asset.job_id).where(Job.prompt_id == row.id, Asset.deleted.is_(False)))
+            latest_id = database.scalar(select(Asset.id).join(Job, Job.id == Asset.job_id).where(Job.prompt_id == row.id, Asset.deleted.is_(False)).order_by(Asset.created.desc(), Asset.id.desc()).limit(1))
+            value["latest_thumb"] = f"/api/assets/{latest_id}/file/thumb" if latest_id else None
             result.append(value)
         return {"items": result, "next": offset + limit if len(rows) > limit else None}
 

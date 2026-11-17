@@ -1,6 +1,6 @@
 export interface Preset {
   id: string; title: string; text: string; category: string; tags: string[];
-  favorite: boolean; version: number; archived?: boolean; results?: number; versions?: { version: number; text: string; title: string }[]
+  favorite: boolean; version: number; archived?: boolean; results?: number; latest_thumb?: string | null; versions?: { version: number; text: string; title: string }[]
 }
 export interface Settings {
   edit_resolution: number; generation_resolution: number[]; upscale_factor: number;

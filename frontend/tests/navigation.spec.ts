@@ -49,6 +49,85 @@ async function swipe(target: Locator, direction: 'left' | 'right') {
   }, end)
 }
 
+for (const mode of ['singola', 'multipla']) {
+  test(`eliminazione ${mode} non richiede nuovamente il PIN`, async ({ page }) => {
+    const { assets } = await fixtures(page, 2, true)
+    let locks = 0
+    const deleted: string[] = []
+    const nativeDialogs: string[] = []
+    page.on('dialog', async dialog => { nativeDialogs.push(dialog.type()); await dialog.dismiss() })
+    await page.route('**/api/privacy**', route => {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/api/privacy/lock') locks += 1
+      return route.fulfill({ json: { enabled: true, locked: path === '/api/privacy' || path === '/api/privacy/lock' } })
+    })
+    await page.route('**/api/assets/navigation-image-*', route => {
+      const asset = assets.find(item => route.request().url().endsWith(`/${item.id}`))!
+      if (route.request().method() === 'PATCH') {
+        expect(route.request().postDataJSON()).toEqual({ deleted: true })
+        asset.deleted = true
+        deleted.push(asset.id)
+      }
+      return route.fulfill({ json: asset })
+    })
+    await page.goto(mode === 'singola' ? `/assets/${assets[0].id}` : '/originals')
+    await page.getByLabel('PIN', { exact: true }).fill('123456')
+    await page.getByRole('button', { name: 'Sblocca', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Blocca app', exact: true })).toBeVisible()
+    const initialLocks = locks
+    if (mode === 'multipla') {
+      await page.getByRole('button', { name: 'Filtri e selezione', exact: true }).click()
+      await page.getByRole('button', { name: 'Seleziona', exact: true }).click()
+      for (const asset of assets) await page.getByRole('checkbox', { name: `Seleziona ${asset.name}`, exact: true }).click()
+    }
+    const remove = page.getByRole('button', { name: 'Sposta nel cestino', exact: true })
+    await remove.click()
+    const confirmation = page.getByRole('dialog')
+    await expect(confirmation.getByRole('heading', { name: 'Spostare nel cestino?' })).toBeVisible()
+    await confirmation.getByRole('button', { name: 'Annulla', exact: true }).click()
+    await expect(confirmation).toHaveCount(0)
+    expect(deleted).toEqual([])
+    await remove.click()
+    await confirmation.getByRole('button', { name: 'Sposta nel cestino', exact: true }).click()
+    await expect.poll(() => deleted.length).toBe(mode === 'singola' ? 1 : assets.length)
+    await expect(confirmation).toHaveCount(0)
+    await expect(page.getByLabel('PIN', { exact: true })).toHaveCount(0)
+    expect(locks).toBe(initialLocks)
+    expect(nativeDialogs).toEqual([])
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+    await expect(page.getByLabel('PIN', { exact: true })).toBeVisible()
+    await expect.poll(() => locks).toBeGreaterThan(initialLocks)
+  })
+}
+
+test('anteprima prompt mantiene altezza e larghezza delle righe', async ({ page }) => {
+  const { assets, prompts } = await fixtures(page, 18, true)
+  const items = [
+    { ...prompts[0], latest_thumb: assets[0].thumb },
+    { ...prompts[0], id: prompts[1].id, latest_thumb: null },
+  ]
+  await page.route('**/api/prompts?**', route => route.fulfill({ json: { items, next: null } }))
+  await page.goto('/prompts')
+  const rows = page.locator('.prompt-row')
+  const thumbnail = rows.first().getByRole('img', { name: 'Ultima immagine generata' })
+  await expect(thumbnail).toBeVisible()
+  await expect.poll(() => thumbnail.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+  await expect(rows.nth(1).locator('.prompt-index')).toHaveText('02')
+  await page.evaluate(() => document.fonts.ready)
+  for (const width of [320, 390, 700, 1440]) {
+    await page.setViewportSize({ width, height: 844 })
+    const withThumbnail = await rows.first().boundingBox()
+    const withoutThumbnail = await rows.nth(1).boundingBox()
+    const image = await thumbnail.boundingBox()
+    expect(Math.abs(withThumbnail!.height - withoutThumbnail!.height)).toBeLessThan(1)
+    expect(Math.abs(image!.width - image!.height)).toBeLessThan(1)
+    expect(image!.width).toBeLessThanOrEqual(45)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  await rows.first().click()
+  await expect(page).toHaveURL(new RegExp(`/prompts/${prompts[0].id}$`))
+})
+
 test('griglia senza sovrapposizioni dopo resize e scroll', async ({ page }) => {
   await fixtures(page)
   await page.goto('/originals')
