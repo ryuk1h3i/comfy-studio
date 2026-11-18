@@ -91,6 +91,36 @@ def test_prompt_and_image_edit_uses_saved_flux3_workflow():
             client.put("/api/settings", json=original)
 
 
+def test_prompt_search_matches_partial_words_in_title_text_and_category():
+    with TestClient(app) as client:
+        login = client.post("/api/login", json={"password": ADMIN_PASSWORD})
+        client.headers["x-csrf-token"] = login.json()["csrf"]
+        marker = uuid.uuid4().hex
+        response = client.post("/api/prompts", json={
+            "title": f"Fotografia{marker}", "text": f"Illuminazione{marker}",
+            "category": f"Paesaggio{marker}",
+        })
+        assert response.status_code == 200
+        identity = response.json()["id"]
+        for query in (f"GRAFIA{marker}", f"minazione{marker}", f"saggio{marker}"):
+            result = client.get("/api/prompts", params={"q": query})
+            assert result.status_code == 200
+            assert [item["id"] for item in result.json()["items"]] == [identity]
+        assert client.get("/api/prompts", params={"q": f"missing{marker}"}).json()["items"] == []
+
+
+def test_prompt_search_treats_wildcards_as_literal_characters():
+    with TestClient(app) as client:
+        login = client.post("/api/login", json={"password": ADMIN_PASSWORD})
+        client.headers["x-csrf-token"] = login.json()["csrf"]
+        marker = uuid.uuid4().hex
+        literal = client.post("/api/prompts", json={"title": f"{marker}%_photo", "text": "Literal"}).json()
+        client.post("/api/prompts", json={"title": f"{marker}XXphoto", "text": "Not a literal match"})
+        result = client.get("/api/prompts", params={"q": f"{marker}%_"})
+        assert result.status_code == 200
+        assert [item["id"] for item in result.json()["items"]] == [literal["id"]]
+
+
 def test_bulk_prompts_are_validated_and_versioned():
     with TestClient(app) as client:
         login = client.post("/api/login", json={"password": ADMIN_PASSWORD})

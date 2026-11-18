@@ -168,10 +168,7 @@ def prompts(q: str = "", favorite: bool = False, offset: int = Query(0, ge=0), l
     with session() as database:
         statement = select(Prompt).where(Prompt.archived.is_(False))
         if q:
-            if engine.dialect.name == "postgresql":
-                statement = statement.where(text("to_tsvector('simple', title || ' ' || text) @@ plainto_tsquery('simple', :query)")).params(query=q)
-            else:
-                statement = statement.where(or_(Prompt.title.icontains(q, autoescape=True), Prompt.text.icontains(q, autoescape=True), Prompt.category.icontains(q, autoescape=True)))
+            statement = statement.where(or_(Prompt.title.icontains(q, autoescape=True), Prompt.text.icontains(q, autoescape=True), Prompt.category.icontains(q, autoescape=True)))
         if favorite:
             statement = statement.where(Prompt.favorite.is_(True))
         rows = list(database.scalars(statement.order_by(Prompt.updated.desc(), Prompt.id).offset(offset).limit(limit + 1)))
