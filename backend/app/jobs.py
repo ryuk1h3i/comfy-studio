@@ -65,7 +65,8 @@ def enqueue(database, payload):
         import hashlib
         import json
         graph, snapshot = copy.deepcopy(template), settings
-        seed_node, seed_key = ("66:54", "seed") if operation == "upscale" else ("13", "noise_seed")
+        seed_node = "66:54" if operation == "upscale" else "13"
+        seed_key = "seed" if "seed" in graph[seed_node]["inputs"] else "noise_seed"
         graph[seed_node]["inputs"][seed_key] = settings["seed"]
         if asset:
             graph["1" if operation == "upscale" else "4"]["inputs"]["image"] = "__STUDIO_INPUT__"

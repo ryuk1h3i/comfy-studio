@@ -32,6 +32,7 @@ JOB_TIMEOUT = int(os.getenv("JOB_TIMEOUT_SECONDS", "1200"))
 ML_TIMEOUT = int(os.getenv("ML_TIMEOUT_SECONDS", "120"))
 DISK_RESERVE = int(os.getenv("DISK_RESERVE_MB", "256")) * 1024 * 1024
 DEFAULTS = {
+    "workflow": "flux2",
     "edit_resolution": 2.0,
     "generation_resolution": [768, 768], "upscale_factor": 3.5,
     "loras": [{"name": os.getenv("LORA_NAME", "FLUX2_KLEIN_UNLOCKED_V2.safetensors"), "weight": 0.8}],

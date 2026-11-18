@@ -1,0 +1,15 @@
+{
+  "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "flux3-image-klein-int8-convrot.safetensors", "weight_dtype": "default"}},
+  "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3vl_4b_int8_convrot.safetensors", "type": "flux3", "device": "default"}},
+  "3": {"class_type": "VAELoader", "inputs": {"vae_name": "flux2-vae.safetensors"}},
+  "6": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors", "type": "flux3", "device": "default"}},
+  "7": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": ""}},
+  "8": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "Expand the user's image request into one detailed English paragraph for an image generation model. Preserve all explicit constraints, subjects, composition, colors, lighting and style. Describe only visible content. Use 50 to 150 words, no Markdown or explanations."}},
+  "9": {"class_type": "TextGenerate", "inputs": {"clip": ["6", 0], "prompt": ["7", 0], "system_prompt": ["8", 0], "max_length": 1024, "sampling_mode": "on", "sampling_mode.temperature": 1.0, "sampling_mode.top_k": 1, "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.0, "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": 0, "sampling_mode.presence_penalty": 0.0, "thinking": false, "use_default_template": true, "mtp": "off"}},
+  "10": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": ["9", 0]}},
+  "11": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": ""}},
+  "13": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["10", 0], "negative": ["11", 0], "latent_image": ["18", 0], "seed": 42, "steps": 16, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}},
+  "14": {"class_type": "VAEDecodeTiled", "inputs": {"samples": ["13", 0], "vae": ["3", 0], "tile_size": 512, "overlap": 64, "temporal_size": 64, "temporal_overlap": 8}},
+  "15": {"class_type": "SaveImage", "inputs": {"images": ["14", 0], "filename_prefix": "Studio-Flux3-Klein"}},
+  "18": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": 768, "height": 768, "batch_size": 1}}
+}

@@ -3,6 +3,7 @@ export interface Preset {
   favorite: boolean; version: number; archived?: boolean; results?: number; latest_thumb?: string | null; versions?: { version: number; text: string; title: string }[]
 }
 export interface Settings {
+  workflow: 'flux2' | 'flux3';
   edit_resolution: number; generation_resolution: number[]; upscale_factor: number;
   loras: { name: string; weight: number }[]; active_slot: string; quick_slots: Record<string, string>; queue_paused: boolean
 }

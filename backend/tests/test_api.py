@@ -6,6 +6,29 @@ from app.config import ADMIN_PASSWORD
 from app.main import app
 
 
+def test_workflow_selection_preserves_shared_settings():
+    with TestClient(app) as client:
+        login = client.post("/api/login", json={"password": ADMIN_PASSWORD})
+        client.headers["x-csrf-token"] = login.json()["csrf"]
+        original = client.get("/api/settings").json()
+        shared = {
+            "edit_resolution": 0.6, "generation_resolution": [1024, 512],
+            "upscale_factor": 2.5, "loras": [{"name": "custom.safetensors", "weight": 0.5}],
+            "active_slot": "0", "quick_slots": {},
+        }
+        try:
+            assert client.put("/api/settings", json=shared).status_code == 200
+            for workflow in ("flux3", "flux2"):
+                assert client.put("/api/settings", json={"workflow": workflow}).status_code == 200
+                saved = client.get("/api/settings").json()
+                assert saved["workflow"] == workflow
+                assert all(saved[key] == value for key, value in shared.items())
+            assert client.put("/api/settings", json={"workflow": "invalid"}).status_code == 400
+            assert client.get("/api/settings").json()["workflow"] == "flux2"
+        finally:
+            client.put("/api/settings", json=original)
+
+
 def test_bulk_prompts_are_validated_and_versioned():
     with TestClient(app) as client:
         login = client.post("/api/login", json={"password": ADMIN_PASSWORD})

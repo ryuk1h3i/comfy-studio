@@ -12,6 +12,8 @@ x-backend: &backend
     - studio-data:/data
     - ./workflows/flux2-klein-9b-q4-create-api.json:/workflows/flux2-klein-9b-q4-create-api.json:ro
     - ./workflows/flux2-klein-9b-q4-edit-api.json:/workflows/flux2-klein-9b-q4-edit-api.json:ro
+    - ./workflows/flux3-klein-int8-create-api.json:/workflows/flux3-klein-int8-create-api.json:ro
+    - ./workflows/flux3-klein-int8-edit-api.json:/workflows/flux3-klein-int8-edit-api.json:ro
     - ./workflows/seedvr2-upscale-api.json:/workflows/seedvr2-upscale-api.json:ro
   extra_hosts:
     - host.docker.internal:host-gateway

@@ -9,12 +9,17 @@ from .config import WORKFLOWS
 TEMPLATES = {
     "create": "flux2-klein-9b-q4-create-api.json",
     "edit": "flux2-klein-9b-q4-edit-api.json",
+    "flux3-edit": "flux3-klein-int8-edit-api.json",
+    "flux3-create": "flux3-klein-int8-create-api.json",
     "upscale": "seedvr2-upscale-api.json",
 }
 
 
 def validate_settings(value):
     result = copy.deepcopy(value)
+    result.setdefault("workflow", "flux2")
+    if result["workflow"] not in ("flux2", "flux3"):
+        raise ValueError("Workflow non valido: scegli Flux2 o Flux3")
     if not 0.1 <= float(result["edit_resolution"]) <= 4 or not 1 <= float(result["upscale_factor"]) <= 4:
         raise ValueError("Edit: 0.1-4 MP; upscale: 1-4x")
     dimensions = result["generation_resolution"]
@@ -44,14 +49,25 @@ def new_seed(previous):
 
 def build(operation, settings, instruction, template=None):
     key = operation
+    flux3 = operation != "upscale" and settings.get("workflow", "flux2") == "flux3"
+    if flux3:
+        key = f"flux3-{operation}"
     prompt = copy.deepcopy(template) if template is not None else json.loads((WORKFLOWS / TEMPLATES[key]).read_text())
-    seed_node, seed_key = ("66:54", "seed") if operation == "upscale" else ("13", "noise_seed")
+    seed_node, seed_key = ("66:54", "seed") if operation == "upscale" else ("13", "seed" if flux3 else "noise_seed")
     settings = copy.deepcopy(settings)
     settings.setdefault("seed", prompt[seed_node]["inputs"][seed_key])
     prompt[seed_node]["inputs"][seed_key] = settings["seed"]
     if operation == "upscale":
         prompt["1"]["inputs"]["image"] = "__STUDIO_INPUT__"
         prompt["66:57"]["inputs"]["resize_type.multiplier"] = settings["upscale_factor"]
+    elif flux3:
+        prompt["7"]["inputs"]["value"] = instruction
+        if operation == "edit":
+            prompt["4"]["inputs"]["image"] = "__STUDIO_INPUT__"
+            prompt["5"]["inputs"]["megapixels"] = settings["edit_resolution"]
+        else:
+            prompt["18"]["inputs"].update(zip(("width", "height"), settings["generation_resolution"]))
+        prompt["15"]["inputs"]["filename_prefix"] = "Studio-Flux3-Klein"
     else:
         prompt["7"]["inputs"]["text"] = instruction
         if operation == "edit":

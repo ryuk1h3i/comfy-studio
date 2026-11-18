@@ -19,13 +19,19 @@ Su telefono la navigazione secondaria e nel menu hamburger. Il menu include Impo
 
 ## Requisiti e architettura
 
-React/TypeScript/Vite, FastAPI/SQLAlchemy/Alembic, PostgreSQL/pgvector e filesystem persistente. Nessun Redis. Compose avvia database, API, worker generazione, worker analisi e frontend/proxy. **Non avvia ComfyUI, Immich server o Immich ML.** Richiede Docker Compose sul server. I tre workflow sono inclusi nella directory `workflows/`:
+React/TypeScript/Vite, FastAPI/SQLAlchemy/Alembic, PostgreSQL/pgvector e filesystem persistente. Nessun Redis. Compose avvia database, API, worker generazione, worker analisi e frontend/proxy. **Non avvia ComfyUI, Immich server o Immich ML.** Richiede Docker Compose sul server. I cinque workflow sono inclusi nella directory `workflows/`:
 
 - [workflows/flux2-klein-9b-q4-create-api.json](workflows/flux2-klein-9b-q4-create-api.json)
 - [workflows/flux2-klein-9b-q4-edit-api.json](workflows/flux2-klein-9b-q4-edit-api.json)
+- [workflows/flux3-klein-int8-create-api.json](workflows/flux3-klein-int8-create-api.json)
+- [workflows/flux3-klein-int8-edit-api.json](workflows/flux3-klein-int8-edit-api.json)
 - [workflows/seedvr2-upscale-api.json](workflows/seedvr2-upscale-api.json)
 
 Modelli e nodi devono essere gia disponibili in ComfyUI. Il frontend non contatta direttamente i servizi remoti. La prima analisi puo richiedere download dei modelli sull'host ML.
+
+In **Impostazioni > Workflow > Modello** scegliere Flux2 Klein 9B Q4 (default anche per installazioni esistenti) oppure Flux3 Klein INT8, sia per creazione sia per modifica. Risoluzione edit, dimensioni di generazione, fattore upscale e prompt rapidi restano condivisi: cambiare modello non li resetta. SeedVR2 per l'upscale non cambia. Le LoRA Flux2 vengono conservate, ma il pannello e nascosto e le LoRA non vengono applicate con Flux3, perche incompatibili. Rigenera e Variazione mantengono il modello del risultato originale; la nuova selezione vale per i nuovi lavori normali.
+
+Flux3 richiede ComfyUI aggiornato (0.41.1 o successivo), `flux3-image-klein-int8-convrot.safetensors` in `models/diffusion_models`, `qwen3vl_4b_int8_convrot.safetensors` e `qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors` in `models/text_encoders`, e `flux2-vae.safetensors` in `models/vae`. Usa 16 step, CFG 1, prompt upsampler e decode tiled. Accettare la licenza dei [modelli ufficiali](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy). Con poca VRAM ridurre la risoluzione edit condivisa a 0.4-0.6 MP prima di accodare: il valore preesistente non viene abbassato automaticamente.
 
 Limiti iniziali: upload 19 MB/25 megapixel; risultati 150 MB/100 megapixel. Il limite output e separato per consentire upscale piu grandi degli originali. Configurare `MAX_IMAGE_PIXELS` e `MAX_OUTPUT_IMAGE_PIXELS` secondo la RAM disponibile; il limite non garantisce memoria sufficiente nella GPU ComfyUI.
 
