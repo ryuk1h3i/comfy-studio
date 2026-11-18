@@ -29,6 +29,68 @@ def test_workflow_selection_preserves_shared_settings():
             client.put("/api/settings", json=original)
 
 
+def test_retry_rebuilds_graph_after_workflow_change():
+    from app.db import Job, session
+
+    with TestClient(app) as client:
+        login = client.post("/api/login", json={"password": ADMIN_PASSWORD})
+        client.headers["x-csrf-token"] = login.json()["csrf"]
+        original = client.get("/api/settings").json()
+        try:
+            for source_workflow, selected_workflow in (("flux2", "flux3"), ("flux3", "flux2")):
+                response = client.post("/api/jobs", json={"token": uuid.uuid4().hex, "operation": "create",
+                                       "instruction": "A landscape", "use_active": False,
+                                       "settings": {"workflow": source_workflow, "loras": []}})
+                assert response.status_code == 200
+                source_id = response.json()["id"]
+                with session() as database:
+                    source = database.get(Job, source_id)
+                    source.status = "failed"
+                    original_seed = source.settings["seed"]
+                assert client.put("/api/settings", json={"workflow": selected_workflow}).status_code == 200
+                token = uuid.uuid4().hex
+                retry = client.post(f"/api/jobs/{source_id}/retry", json={"token": token})
+                assert retry.status_code == 200
+                with session() as database:
+                    result = database.get(Job, retry.json()["id"])
+                    assert result.settings["workflow"] == selected_workflow
+                    assert result.settings["seed"] == original_seed
+                    expected_loader = "UNETLoader" if selected_workflow == "flux3" else "UnetLoaderGGUF"
+                    assert result.workflow["1"]["class_type"] == expected_loader
+                    assert database.get(Job, source_id).settings["workflow"] == source_workflow
+                assert client.post(f"/api/jobs/{source_id}/retry", json={"token": token}).json()["id"] == retry.json()["id"]
+        finally:
+            client.put("/api/settings", json=original)
+
+
+def test_prompt_and_image_edit_uses_saved_flux3_workflow():
+    from app.db import Job, session
+
+    with TestClient(app) as client:
+        login = client.post("/api/login", json={"password": ADMIN_PASSWORD})
+        client.headers["x-csrf-token"] = login.json()["csrf"]
+        original = client.get("/api/settings").json()
+        try:
+            assert client.put("/api/settings", json={"workflow": "flux3"}).status_code == 200
+            prompt = client.post("/api/prompts", json={"title": "Flux3 edit", "text": "Change the sky"}).json()
+            image = io.BytesIO()
+            Image.new("RGB", (32, 24), "green").save(image, "PNG")
+            asset = client.post("/api/assets", files={"file": ("flux3-edit.png", image.getvalue(), "image/png")}).json()
+            for overrides in ({}, {"workflow": "flux3"}):
+                response = client.post("/api/jobs", json={"token": uuid.uuid4().hex, "operation": "edit",
+                                       "input_id": asset["id"], "prompt_id": prompt["id"], "settings": overrides})
+                assert response.status_code == 200
+                with session() as database:
+                    result = database.get(Job, response.json()["id"])
+                    assert result.settings["workflow"] == "flux3"
+                    assert result.workflow["1"]["class_type"] == "UNETLoader"
+                    assert result.workflow["7"]["inputs"]["value"] == "Change the sky"
+                    assert result.workflow["4"]["inputs"]["image"] == "__STUDIO_INPUT__"
+                    assert not any(node["class_type"] == "UnetLoaderGGUF" for node in result.workflow.values())
+        finally:
+            client.put("/api/settings", json=original)
+
+
 def test_bulk_prompts_are_validated_and_versioned():
     with TestClient(app) as client:
         login = client.post("/api/login", json={"password": ADMIN_PASSWORD})

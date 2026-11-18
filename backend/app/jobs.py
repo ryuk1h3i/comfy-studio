@@ -30,13 +30,16 @@ def enqueue(database, payload):
     if payload.action in {"repeat", "vary"}:
         if not source:
             raise HTTPException(400, "Questa azione richiede un risultato")
+        selected_workflow = settings["workflow"]
         settings = copy.deepcopy(source.settings)
+        settings["workflow"] = selected_workflow
         settings["seed"] = new_seed(settings["seed"])
         if payload.action == "repeat":
             operation, instruction = source.operation, source.instruction
             prompt_id, version, addition = source.prompt_id, source.prompt_version, source.addition
             asset = database.get(Asset, source.input_id) if source.input_id else None
-            template = source.workflow
+            if selected_workflow == source.settings.get("workflow", "flux2") or operation == "upscale":
+                template = source.workflow
         else:
             operation = "edit"
     elif operation == "upscale" and source:

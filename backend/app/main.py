@@ -19,7 +19,7 @@ from .db import Asset, AssetTag, Face, Job, JobTiming, Person, Prompt, PromptVer
 from .jobs import current_settings, enqueue
 from .schemas import JobInput, LoginInput, PinInput, PrivacyInput, PromptBulkInput, PromptInput
 from .storage import location, store
-from .workflows import validate_settings
+from .workflows import build, validate_settings
 
 
 def serialize(row):
@@ -414,10 +414,15 @@ def retry_job(identity: str, payload: dict):
         source = get(database, Job, identity)
         if source.status not in {"failed", "cancelled"}:
             raise HTTPException(409, "Verifica prima che il lavoro non sia attivo")
+        snapshot, graph, digest = copy.deepcopy(source.settings), copy.deepcopy(source.workflow), source.workflow_hash
+        selected_workflow = current_settings(database)["workflow"]
+        if source.operation != "upscale" and selected_workflow != snapshot.get("workflow", "flux2"):
+            snapshot["workflow"] = selected_workflow
+            graph, snapshot, digest = build(source.operation, validate_settings(snapshot), source.instruction)
         retry = Job(token=request_token, operation=source.operation, input_id=source.input_id, root_id=source.root_id,
                     prompt_id=source.prompt_id, prompt_version=source.prompt_version, instruction=source.instruction,
-                    addition=source.addition, settings=copy.deepcopy(source.settings), workflow=copy.deepcopy(source.workflow),
-                    workflow_hash=source.workflow_hash)
+                    addition=source.addition, settings=snapshot, workflow=graph,
+                    workflow_hash=digest)
         database.add(retry)
         database.flush()
         return job_data(retry)

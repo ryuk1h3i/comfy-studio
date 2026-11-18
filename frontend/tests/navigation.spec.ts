@@ -172,6 +172,27 @@ test('prompt e immagini navigano con frecce e swipe fuori dallo zoom', async ({ 
   await expect(page).toHaveURL(/navigation-image-1$/)
 })
 
+for (const workflow of ['flux2', 'flux3']) {
+  test(`prompt e immagine inviano esplicitamente il workflow ${workflow}`, async ({ page }) => {
+    const { assets, prompts } = await fixtures(page, 2, true)
+    await page.route('**/api/settings', route => route.fulfill({ json: { workflow, quick_slots: {}, active_slot: '0' } }))
+    await page.route('**/api/privacy', route => route.fulfill({ json: { enabled: false, locked: false } }))
+    await page.route('**/api/jobs', route => route.fulfill({ json: route.request().method() === 'POST' ? { id: 'workflow-edit' } : [] }))
+    await page.goto(`/prompts/${prompts[0].id}`)
+    await page.getByRole('link', { name: 'Modifica immagine', exact: true }).click()
+    await page.locator('.asset-image').first().click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByLabel('Istruzione aggiuntiva')).toBeVisible()
+    const request = page.waitForRequest(request => request.url().endsWith('/api/jobs') && request.method() === 'POST')
+    await dialog.getByRole('button', { name: 'Aggiungi alla coda', exact: true }).click()
+    expect((await request).postDataJSON()).toMatchObject({
+      operation: 'edit', action: 'normal', input_id: assets[0].id,
+      prompt_id: prompts[0].id, settings: { workflow },
+    })
+    await expect(dialog).toHaveCount(0)
+  })
+}
+
 test('pallino seleziona e composer accoda tutte senza duplicare dopo errore parziale', async ({ page }) => {
   const { assets, prompts } = await fixtures(page)
   const requests: { input_id: string; token: string; prompt_id: string; instruction: string }[] = []

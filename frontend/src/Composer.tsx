@@ -36,7 +36,7 @@ export function Composer({ operation, asset, prompt, inputIds, onQueued, action 
   function selectPrompts(identities: string[]) { initialized.current = true; setSelected(identities) }
   const title = action === 'repeat' ? 'Rigenera' : action === 'vary' ? 'Variazione' : operation === 'upscale' ? 'Upscale' : operation === 'edit' ? 'Modifica immagine' : 'Crea immagine'
   async function submit() {
-    if (busy) return
+    if (busy || !settings.data || settings.isError) return
     setBusy(true); setError('')
     try {
       const inputs = batchIds || [input?.id || null]
@@ -45,7 +45,7 @@ export function Composer({ operation, asset, prompt, inputIds, onQueued, action 
           const key = JSON.stringify([identity, promptId])
           if (submitted.current.has(key)) continue
           if (!requestTokens.current.has(key)) requestTokens.current.set(key, token())
-          await api<Job>('/jobs', 'POST', { token: requestTokens.current.get(key)!, operation, input_id: identity, prompt_id: promptId, instruction, action, settings: factor === undefined ? {} : { upscale_factor: factor } })
+          await api<Job>('/jobs', 'POST', { token: requestTokens.current.get(key)!, operation, input_id: identity, prompt_id: promptId, instruction, action, settings: { workflow: settings.data.workflow || 'flux2', ...(factor === undefined ? {} : { upscale_factor: factor }) } })
           submitted.current.add(key); setQueuedCount(submitted.current.size)
         }
         if (identity) onQueued?.([identity])
@@ -64,6 +64,6 @@ export function Composer({ operation, asset, prompt, inputIds, onQueued, action 
     {operation === 'upscale' && action !== 'repeat' && <label>Fattore upscale<select value={factor ?? ''} onChange={event => setFactor(event.target.value ? Number(event.target.value) : undefined)}><option value="">Usa fattore salvato</option>{[1, 1.5, 2, 2.5, 3, 3.5, 4].map(value => <option key={value} value={value}>{value}x</option>)}</select></label>}
     </fieldset>
     {jobCount > 1 && <strong>{jobCount} lavori{queuedCount > 0 ? `, ${queuedCount} accodati` : ''}</strong>}
-    <ErrorBox error={error} /><button className="primary wide" disabled={busy}><WandSparkles size={18} />{busy ? 'Invio...' : 'Aggiungi alla coda'}<ArrowRight size={18} /></button>
+    <ErrorBox error={error || settings.error} /><button className="primary wide" disabled={busy || !settings.data || settings.isError}><WandSparkles size={18} />{busy ? 'Invio...' : 'Aggiungi alla coda'}<ArrowRight size={18} /></button>
   </form></Modal>
 }
