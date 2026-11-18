@@ -19,19 +19,13 @@ Su telefono la navigazione secondaria e nel menu hamburger. Il menu include Impo
 
 ## Requisiti e architettura
 
-React/TypeScript/Vite, FastAPI/SQLAlchemy/Alembic, PostgreSQL/pgvector e filesystem persistente. Nessun Redis. Compose avvia database, API, worker generazione, worker analisi e frontend/proxy. **Non avvia ComfyUI, Immich server o Immich ML.** Richiede Docker Compose sul server. I cinque workflow sono inclusi nella directory `workflows/`:
+React/TypeScript/Vite, FastAPI/SQLAlchemy/Alembic, PostgreSQL/pgvector e filesystem persistente. Nessun Redis. Compose avvia database, API, worker generazione, worker analisi e frontend/proxy. **Non avvia ComfyUI, Immich server o Immich ML.** Richiede Docker Compose sul server. I tre workflow sono inclusi nella directory `workflows/`:
 
 - [workflows/flux2-klein-9b-q4-create-api.json](workflows/flux2-klein-9b-q4-create-api.json)
 - [workflows/flux2-klein-9b-q4-edit-api.json](workflows/flux2-klein-9b-q4-edit-api.json)
-- [workflows/flux3-klein-int8-create-api.json](workflows/flux3-klein-int8-create-api.json)
-- [workflows/flux3-klein-int8-edit-api.json](workflows/flux3-klein-int8-edit-api.json)
 - [workflows/seedvr2-upscale-api.json](workflows/seedvr2-upscale-api.json)
 
 Modelli e nodi devono essere gia disponibili in ComfyUI. Il frontend non contatta direttamente i servizi remoti. La prima analisi puo richiedere download dei modelli sull'host ML.
-
-In **Impostazioni > Workflow > Modello** scegliere Flux2 Klein 9B Q4 (default anche per installazioni esistenti) oppure Flux3 Klein INT8, sia per creazione sia per modifica. Risoluzione edit, dimensioni di generazione, fattore upscale e prompt rapidi restano condivisi: cambiare modello non li resetta. SeedVR2 per l'upscale non cambia. Le LoRA Flux2 vengono conservate, ma il pannello e nascosto e le LoRA non vengono applicate con Flux3, perche incompatibili. Anche Rigenera, Variazione e Riprova usano il modello attualmente selezionato. Se il modello cambia, il grafo viene ricostruito mantenendo gli altri parametri del lavoro originale. I lavori gia accodati non vengono modificati.
-
-Flux3 richiede ComfyUI aggiornato (0.41.1 o successivo), `flux3-image-klein-int8-convrot.safetensors` in `models/diffusion_models`, `qwen3vl_4b_int8_convrot.safetensors` e `qwen3.5_9b_flux3_prompt_upsampler_w4a8.safetensors` in `models/text_encoders`, e `flux2-vae.safetensors` in `models/vae`. Usa 16 step, CFG 1, prompt upsampler e decode tiled. Accettare la licenza dei [modelli ufficiali](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy). Con poca VRAM ridurre la risoluzione edit condivisa a 0.4-0.6 MP prima di accodare: il valore preesistente non viene abbassato automaticamente.
 
 Limiti iniziali: upload 19 MB/25 megapixel; risultati 150 MB/100 megapixel. Il limite output e separato per consentire upscale piu grandi degli originali. Configurare `MAX_IMAGE_PIXELS` e `MAX_OUTPUT_IMAGE_PIXELS` secondo la RAM disponibile; il limite non garantisce memoria sufficiente nella GPU ComfyUI.
 
@@ -108,7 +102,7 @@ Il job e registrato prima di chiamare ComfyUI; un token evita doppi click. Un lo
 
 History viene controllata ogni due secondi. Il worker ascolta anche `/ws?clientId=...` di ComfyUI per aggiornare la barra con i passi reali del nodo corrente: la percentuale non e una stima del tempo totale e puo ripartire quando cambia nodo. Durante caricamento modelli, salvataggio o assenza di eventi live la barra e indeterminata. Se il WebSocket e indisponibile, il recupero dei risultati continua tramite history. L'icona compatta in testata gira mentre ci sono job in invio/elaborazione e segnala i job da verificare. SSE aggiorna il frontend con fallback polling. Dopo riavvio il worker recupera i job con `prompt_id` noto. Un timeout o invio senza conferma lascia **Da verificare** e blocca nuovi dispatch. Verificare queue/history ComfyUI, recuperare il risultato o confermare che il lavoro non sia attivo prima di ritentare. Un crash fra accettazione remota e salvataggio del `prompt_id` richiede verifica manuale; `client_id`/`extra_data.studio_job_id` aiutano a trovare il job remoto. Nessun retry generativo automatico e nessun `/interrupt` globale.
 
-Il salvataggio output e idempotente per job/indice; recuperarlo non genera una nuova immagine. Retry conserva seed e snapshot se il modello selezionato non cambia; altrimenti ricostruisce il grafo per il nuovo modello. Rigenera assegna nuovo seed. La riproducibilita non e garantita se cambiano checkpoint, versioni nodi o ambiente ComfyUI.
+Il salvataggio output e idempotente per job/indice; recuperarlo non genera una nuova immagine. Retry conserva lo snapshot, Rigenera assegna nuovo seed. La riproducibilita non e garantita se cambiano checkpoint, versioni nodi o ambiente ComfyUI.
 
 La coda mostra le miniature dei risultati disponibili: un tocco apre il dettaglio dell'immagine, come nella galleria Edits. I risultati nel cestino non vengono mostrati. Per i job completati, la durata va dalla presa in carico del worker fino al salvataggio dei risultati: include preparazione, eventuale attesa remota e recupero output, ma esclude l'attesa nella coda locale. Un recupero dopo interruzione include anche l'intervallo trascorso durante l'arresto. I job precedenti alla registrazione dei tempi mostrano **Durata non disponibile**, senza stimare tempi dai timestamp generici.
 
