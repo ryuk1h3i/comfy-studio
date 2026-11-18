@@ -135,7 +135,10 @@ async def monitor_history(client, job):
                     update(job.id, status="failed", error=message[:2000] or "Errore ComfyUI")
                     return
                 if status.get("completed"):
-                    images = history.get("outputs", {}).get("9" if job.operation == "upscale" else "19", {}).get("images", [])
+                    outputs = history.get("outputs", {})
+                    images = [image for node_id, node in job.workflow.items()
+                              if node["class_type"] == "SaveImage"
+                              for image in outputs.get(node_id, {}).get("images", [])]
                     if not images:
                         update(job.id, status="failed", error="Il workflow non ha restituito immagini")
                         return

@@ -23,10 +23,12 @@ def test_progress_is_scoped_to_remote_job():
 
 
 @pytest.mark.asyncio
-async def test_worker_stores_output_once_and_recovers_without_resubmit():
+@pytest.mark.parametrize("workflow", ["flux2", "flux3"])
+async def test_worker_stores_output_once_and_recovers_without_resubmit(workflow):
     initialize()
     with session() as database:
-        job = enqueue(database, JobInput(token=uuid.uuid4().hex, instruction="A landscape"))
+        job = enqueue(database, JobInput(token=uuid.uuid4().hex, instruction="A landscape", settings={"workflow": workflow}))
+    output_node = "15" if workflow == "flux3" else "19"
     image = io.BytesIO()
     Image.new("RGB", (32, 24), "blue").save(image, "PNG")
     submissions = []
@@ -35,8 +37,12 @@ async def test_worker_stores_output_once_and_recovers_without_resubmit():
             submissions.append(request)
             return httpx.Response(200, json={"prompt_id": "remote-123"})
         if request.url.path == "/history/remote-123":
-            return httpx.Response(200, json={"remote-123": {"status": {"completed": True}, "outputs": {"19": {"images": [{"filename": "result.png"}]}}}})
+            return httpx.Response(200, json={"remote-123": {"status": {"completed": True}, "outputs": {
+                output_node: {"images": [{"filename": "result.png"}]},
+                "preview": {"images": [{"filename": "preview.png"}]},
+            }}})
         if request.url.path == "/view":
+            assert request.url.params["filename"] == "result.png"
             return httpx.Response(200, content=image.getvalue())
         raise AssertionError(request.url.path)
     async with httpx.AsyncClient(base_url="http://comfy", transport=httpx.MockTransport(handler)) as client:
